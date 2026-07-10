@@ -1,0 +1,13 @@
+# 핵심(검증 코어 + 백트래킹 생성기 + CLI)은 표준 라이브러리만으로 동작합니다.
+# 아래는 '선택' 의존성입니다. 필요한 것만 설치하세요.
+
+# --- 설정 파일(YAML) 및 대시보드 ---
+pyyaml>=6.0          # config.yaml 사용 (run.py)
+streamlit>=1.33      # 결과/기준 UI (dashboard.py)
+pandas>=2.0          # 대시보드 표/차트
+
+# --- 대규모 탐색용 SMT 백엔드 (backend: z3) ---
+z3-solver>=4.12      # GP 제약을 SMT 로 인코딩해 chirotope 열거
+
+# --- Theorist 위원회(로컬 LLM) 사용 시 ---
+requests>=2.31       # Ollama HTTP 호출  (별도로 `ollama serve` + 모델 pull 필요)

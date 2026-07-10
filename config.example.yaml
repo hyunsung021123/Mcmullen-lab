@@ -1,0 +1,62 @@
+# ============================================================================
+# config.example.yaml — 탐색 설정 (이 파일만 고치면 탐색 기준을 넣고 뺄 수 있습니다)
+# 복사해서 config.yaml 로 쓰고:  python run.py --config config.yaml
+# ============================================================================
+
+d: 2                  # 차원. rank = d+1.   d=2→평면, d=3, d=5(Larman f(5)=11 목표)
+om_class: uniform     # 탐색 공간(클래스):
+                      #   uniform            - 모든 uniform OM (rank d+1, 전수)
+                      #   realizable_uniform - 실현가능 uniform OM (무작위 점배치, d>=3 빠름)
+                      #   rank2_uniform      - rank-2 uniform OM (REOM 실험 기반; rank=2 고정)
+                      #   cyclic             - 순환다면체 OM (기준선/시드)
+                      #   lawrence           - 소켓(REOM 인코딩 연결 시 동작)
+                      #   `python run.py --list-classes` 로 전체 확인
+n_min: 6              # 탐색 시작 원소 수 (생략 시 2d+2)
+n_max: 6              # 탐색 최대 원소 수 (생략 시 U+1)
+# U: 5                # 느슨한 상한. 생략 시 2d + floor((1+d)/2) (d=2→5, d=3→8, d=5→13)
+rounds: 1             # 루프 라운드 수
+seed:                 # random 백엔드 재현용 시드 (비우면 무작위)
+backend:              # generic 클래스 백엔드 override (비우면 클래스 기본):
+                      #   backtracking(전수) | random(무작위 실현가능) | z3(대규모)
+dedup: true           # 재배향-동치 중복 제거(작은 n 권장). 대규모면 false + z3
+max_candidates_per_round: 300
+record_accepted: true # witness 아니어도 '채택된' 후보를 일부 기록(대시보드 표시용)
+accepted_cap: 30
+
+# ---- 연구 루프(리뷰 반영) ----
+discovery_enabled: true   # 검증된 witness 구조를 자동 분석해 발견/제안 편향 도출(학습 루프)
+memory_path:              # 장기기억 파일(예: memory.json). 비우면 미사용. 실행마다 누적
+debate_rounds: 2          # LLM 전문가 토론 라운드 수(llm_enabled 시)
+
+# ---- Theorist 위원회 (로컬 LLM) : 기본 꺼짐 ----
+# 켜려면 llm_enabled: true + `ollama serve` 가동 + 모델 pull (예: ollama pull qwen2.5)
+llm_enabled: false
+llm_model: qwen2.5
+
+# ============================================================================
+# criteria — 탐색 기준 목록.  각 항목 = {name, mode, (args)}
+#   mode:
+#     require : 후보로 채택되려면 이 성질을 '만족'해야 함
+#     forbid  : 이 성질을 만족하면 '탈락'
+#     target  : '달성하면 성공(witness)'으로 보는 목표 성질 (여러 개면 AND)
+#
+#   사용 가능한 이름(REGISTRY):
+#     valid                        (항상 자동 require 됨 — 적법한 GP uniform OM)
+#     acyclic                      양의 회로 없음
+#     totally_cyclic               양의 코회로 없음 (acyclic 의 쌍대; convex 와 무관)
+#     convex_position              모든 Radon 분할이 균형 = convex independent
+#     reorientable_to_convex       어떤 재배향으로 convex 가능
+#     not_reorientable_to_convex   어떤 재배향으로도 convex 불가 → McMullen 상한 witness
+#     circuit_balance_at_least     args: [min_side]  모든 회로의 작은 쪽 >= min_side
+#     min_symmetry_order           args: [k]         부호보존 재배향 수 >= k
+#
+#   * 새 기준을 코드로 추가하려면 criteria.py 의 register("이름", 술어, "설명") 한 줄.
+# ============================================================================
+criteria:
+  - {name: acyclic, mode: require}
+  - {name: totally_cyclic, mode: forbid}        # convex 와 명확히 분리해 배제
+  - {name: not_reorientable_to_convex, mode: target}   # 이게 곧 상한 witness
+
+  # --- 집중 탐색 예시 (주석 해제해서 사용) ---
+  # - {name: circuit_balance_at_least, mode: forbid, args: [2]}   # convex 직전 구조 회피
+  # - {name: min_symmetry_order, mode: require, args: [2]}        # 대칭 풍부한 것만

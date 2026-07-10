@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcmullen-lab"
+version = "0.1.0"
+description = "McMullen 문제(d=5, f(5)=11) 상한을 유향 매트로이드(OM) 재구성으로 탐색하는 로컬 연구 에이전트"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "최현성" }]
+dependencies = []
+
+[project.optional-dependencies]
+# 기본 실행(백트래킹/랜덤 백엔드, CLI 결과 저장)은 표준 라이브러리만 필요.
+ui = ["streamlit>=1.30", "pandas>=2.0"]
+config = ["pyyaml>=6.0"]
+z3 = ["z3-solver>=4.12"]
+llm = ["requests>=2.31"]
+all = ["mcmullen-lab[ui,config,z3,llm]"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+mcmullen-lab = "run:main"
+
+[tool.setuptools]
+py-modules = [
+    "om_core", "om_classes", "criteria", "generator",
+    "discovery", "memory", "theorist", "store",
+    "search", "progress", "manager", "run",
+]
