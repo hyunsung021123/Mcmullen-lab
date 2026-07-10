@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# 실행 결과물 — 코드가 아니라 실행 산출물이므로 커밋 대상 아님
+results*.json
+memory*.json
+/tmp/
+
+# Streamlit
+.streamlit/
+
+# 에디터/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 테스트/캐시
+.pytest_cache/
+.mypy_cache/

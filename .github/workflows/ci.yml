@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  self-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package (core + config extra)
+        run: pip install -e ".[config]"
+
+      - name: Syntax / import check
+        run: python -m py_compile *.py
+
+      - name: Core verifier self-test
+        run: python om_core.py
+
+      - name: Criteria / generator / classes self-tests
+        run: |
+          python criteria.py
+          python generator.py
+          python om_classes.py
+
+      - name: Discovery self-test
+        run: python discovery.py
+
+      - name: Theorist self-test (mock LLM, no Ollama needed)
+        run: python theorist.py
+
+      - name: Progress/Control (threaded pause-resume-stop) self-test
+        run: python progress.py
+
+      - name: Search loop self-test (d=2 exhaustive)
+        run: python search.py
+
+      - name: Store self-test
+        run: python store.py
+
+      - name: CLI smoke test
+        run: |
+          python run.py --list-classes
+          python run.py --config config.example.yaml --out /tmp/ci_results.json
