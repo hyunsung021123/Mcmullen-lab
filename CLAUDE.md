@@ -79,14 +79,15 @@ sleep 8; curl -sf http://localhost:8501 > /dev/null && echo OK
 - 무거운 선택적 의존성(streamlit, z3-solver, pyyaml, requests)은 항상 `try/except ImportError`
   로 감싸 optional 로 유지한다 — 코어 검증기는 표준 라이브러리만으로 동작해야 한다.
 
-## ChatGPT와의 협업 (Multi-AI)
+## 다자간 AI 협업 (Claude Code · Codex · ChatGPT)
 
-이 저장소는 Claude Code와 ChatGPT가 함께 작업할 수 있도록 설계되어 있다. 역할 분담,
-소통 채널(커밋/PR 규약·결정 로그·교차 리뷰 이슈), 건설적 반박의 형식은
-`COLLABORATION.md`에 정의되어 있다 — 다른 AI가 관여할 가능성이 있는 작업이라면 먼저
-그 문서를 읽을 것. 설계 결정은 `docs/DECISIONS.md`에 append 방식으로 누적된다. 이
-프로토콜도 위 불변 조건과 마찬가지로, "최적화"를 이유로 §1(신뢰 모델)을 깨는 제안은
-자동 기각 대상이다.
+이 저장소는 Claude Code(직접 커밋), Codex(로컬 폴더 경유 간접 커밋), ChatGPT(읽기
+전용)가 함께 작업할 수 있도록 설계되어 있다 — 세 참여자의 저장소 접근 권한은
+대칭이 아니다. 역할 분담, 소통 채널(커밋/PR 규약·결정 로그·교차 리뷰 이슈), 건설적
+반박의 형식은 `COLLABORATION.md`에 정의되어 있다 — 다른 참여자가 관여할 가능성이
+있는 작업이라면 먼저 그 문서를 읽을 것. 설계 결정은 `docs/DECISIONS.md`에 append
+방식으로 누적된다. 이 프로토콜도 위 불변 조건과 마찬가지로, "최적화"를 이유로
+§1(신뢰 모델)을 깨는 제안은 자동 기각 대상이다.
 
 ## 자주 하는 작업 예시 프롬프트
 
