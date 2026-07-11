@@ -79,3 +79,38 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 다른 참여자 리뷰 상태: pending (Codex·ChatGPT 양쪽 다 이 개정판을 아직 검토하지
   않음 — 특히 Codex 쪽에는 "로컬 폴더 경유 커밋도 역할 체크박스로 표시해야 한다"는
   요구가 실제로 실행 가능한지 확인 필요)
+
+## 0003 — 브랜치/이슈/HANDOFF 기반 협업 워크플로 정비
+
+- 날짜: 2026-07-11
+- 제안자: chatgpt (코드 리뷰용 AI 조언) → claude-code 가 현재 코드에 맞게 조정·구현,
+  human 승인(3개 핵심 선택)
+- 결정: 저장소를 세 AI의 유일한 공유 상태로 다시 못박고, 브랜치 모델(main + 에이전트별
+  `<agent>/<issue>-<slug>`) · 작업단위=Issue · HANDOFF 형식 · 충돌 처리 규칙을 문서화한다.
+  신규: `AGENTS.md`(Codex 진입점), `docs/AI_WORKFLOW.md`(절차), `docs/WORKBOARD.md`(활성
+  작업 인덱스), `docs/RESEARCH_STATUS.md`(연구 현황), `.github/ISSUE_TEMPLATE/ai_task.md`.
+  개정: `COLLABORATION.md`(역할표 정교화 + 절차는 AI_WORKFLOW로 위임하는 포인터),
+  `PULL_REQUEST_TEMPLATE.md`(담당·연결이슈·기준커밋·HANDOFF 섹션 추가). 함께: 현재
+  `claude/repo-setup-files-svtmrg`를 `main`으로 승격해 브랜치 모델의 기준선을 만든다.
+- 배경/문제: 0002까지는 "누가 무엇을 했나"만 다뤘고, 여러 AI가 동시에 같은 저장소를
+  건드릴 때의 실무 문제(브랜치 소유권, 동시 편집 충돌, 작업 현황 가시성, 인수인계,
+  기준 브랜치 부재)가 규약으로 정리돼 있지 않았다. 특히 `main` 브랜치가 아예 없어
+  브랜치 모델 자체가 성립하지 않는 상태였다.
+- 검토한 대안과 기각 사유:
+  - 모든 진행 로그를 공유 Markdown 하나(`AGENT_LOG.md`)에 append → 여러 AI 동시 수정 시
+    병합 충돌 빈발. 기각. 대신 상세는 Issue/PR, 인덱스만 `WORKBOARD.md`.
+  - 리뷰 AI가 제시한 전체 파일 세트를 그대로 도입하되 역할 경계를 흐리게 → 리뷰 AI
+    스스로의 기준("문서 과잉/중복 회피")에 어긋남. 그래서 문서별 책임을 명확히 분리
+    (헌장=COLLABORATION, 절차=AI_WORKFLOW, 진입점=AGENTS)해 중복을 제거.
+  - `main` 부재를 방치하고 문서만 정비 → 브랜치 규약이 존재하지 않는 기준을 가리키는
+    모순. 기각. 현재 브랜치를 main으로 승격하기로 함(human 승인).
+  - 전용 브랜치(claude/ai-collaboration-infrastructure)에서 작업 → human이 "현재 svtmrg
+    브랜치에서 이어서"를 선택. 기각.
+- 영향 범위: **핵심 코드 로직 변경 없음(문서/템플릿 전용).** `om_core.py` 등 연구 코드
+  파일은 이번 작업에서 전혀 수정하지 않음. `python -m py_compile *.py` 통과 확인.
+- 부트스트랩 예외(정직성 기록): 이 커밋 자체는 새 워크플로(“모든 변경은 PR로, main 직접
+  push 금지”)를 **도입하는** 커밋이므로, 그 규칙이 강제되기 전 단계에서 기존 svtmrg
+  브랜치에 직접 커밋되었다. main 승격과 branch protection(사람이 GitHub 설정에서 켜야 함)
+  이후부터 이 워크플로가 실제로 강제된다.
+- 다른 참여자 리뷰 상태: pending (Codex가 `AGENTS.md`를 실제로 자동 인식하는지, ChatGPT가
+  이 문서 세트만으로 PR/CI 맥락을 재구성할 수 있는지 실사용 검증 필요)
