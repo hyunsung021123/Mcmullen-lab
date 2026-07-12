@@ -290,3 +290,16 @@ if __name__ == "__main__":
         print(f"  [{p['role']:16}] {p['status']:9} {p['critique']}")
     print("promoted:", [b["bias"] for b in res["promoted"]])
     print("criteria_add:", res["criteria_add"], "| next_n:", res["next_n_override"])
+
+    # core-contract: 결정론적 적대자가 매 라운드 동일 입력에 동일 판정을 내리는지 고정.
+    # (ChatGPT 리뷰 0006 반영 — 이전엔 출력만 하고 어느 것도 assert하지 않았다.)
+    status_by_role = {p["role"]: p["status"] for p in res["transcript"][0]["proposals"]}
+    assert status_by_role["geometer"] == "survived"        # acyclic require: witness가 만족
+    assert status_by_role["combinatorialist"] == "rejected"  # counterexample_hunter가 배제
+    assert status_by_role["om_expert"] == "survived"       # element_count 범위 안
+    assert status_by_role["graph_expert"] == "rejected"    # 미등록 REGISTRY 이름
+    assert status_by_role["sat_expert"] == "rejected"      # forbid(valid) → 공허
+    assert len(res["promoted"]) == 2
+    assert res["criteria_add"] == [{"name": "acyclic", "mode": "require", "args": []}]
+    assert res["next_n_override"] == 8
+    print("core-contract assertions OK (결정론적 적대자 판정 고정)")

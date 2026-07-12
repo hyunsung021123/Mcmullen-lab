@@ -46,6 +46,9 @@ jobs:
       - name: Store self-test
         run: python store.py
 
+      - name: Manager (research loop) self-test
+        run: python manager.py
+
       - name: CLI smoke test
         run: |
           python run.py --list-classes

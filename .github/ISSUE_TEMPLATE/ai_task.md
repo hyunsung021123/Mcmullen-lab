@@ -24,7 +24,7 @@ labels: ai-task
 <!-- ChatGPT는 읽기 전용이라 작업 담당이 될 수 없음(리뷰만). 리뷰 요청은 cross_review 템플릿 사용 -->
 
 ## 기준 브랜치 / 커밋
-<!-- 예: main @ <SHA>.  이 커밋에서 <agent>/<issue>-<slug> 브랜치를 분기 -->
+<!-- 예: develop @ <SHA>.  이 커밋에서 <agent>/<issue>-<slug> 브랜치를 분기 (main이 아님) -->
 
 ## 수용 조건 (Definition of Done)
 <!-- 무엇이 충족되면 완료로 인정하는가 -->

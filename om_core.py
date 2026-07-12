@@ -201,18 +201,49 @@ def mcmullen_evaluate(chi, U=None):
 
 
 if __name__ == "__main__":
+    # core-contract: 이 값들은 실측(수학적으로 확인된) 기대값이다 — 출력만 하지 않고
+    # 반드시 assert한다. 판별 로직이 회귀하면(예: is_convex_position 부호 반전) 여기서
+    # 반드시 실패해야 한다. (ChatGPT 리뷰 0004/0006 반영 — 기존엔 print만 하고 값
+    # 자체는 검증하지 않아 CI가 smoke test에 불과했다.)
     def report(name, ch):
         print(f"[{name:24}] n={ch.n} r={ch.r} | "
               f"valid={ch.is_valid()!s:5} acyclic={ch.is_acyclic()!s:5} "
               f"tot_cyclic={ch.is_totally_cyclic()!s:5} convex={ch.is_convex_position()!s:5}")
 
+    # 볼록 사각형: valid/acyclic/convex 전부 True, totally_cyclic은 False
     quad = Chirotope.from_points([(0, 0), (2, 0), (2, 2), (0, 2)])
     report("convex quad", quad)
+    assert quad.is_valid() is True
+    assert quad.is_acyclic() is True
+    assert quad.is_totally_cyclic() is False
+    assert quad.is_convex_position() is True
+    assert quad.is_reorientable_to_convex()[0] is True   # 이미 convex이므로 당연히 True
+    ev_quad = mcmullen_evaluate(quad)
+    assert ev_quad["witness"] is False and ev_quad["reorientable"] is True
+
+    # 삼각형 + 내부점: acyclic이지만 convex 아님. 그러나 재배향하면 convex 가능(witness 아님)
     tri = Chirotope.from_points([(0, 0), (4, 0), (0, 4), (1, 1)])
     report("triangle+interior", tri)
+    assert tri.is_valid() is True
+    assert tri.is_acyclic() is True
+    assert tri.is_totally_cyclic() is False
+    assert tri.is_convex_position() is False          # 내부점 때문에 convex 아님
+    assert tri.is_reorientable_to_convex()[0] is True  # 하지만 재배향하면 convex 가능
+    ev_tri = mcmullen_evaluate(tri)
+    assert ev_tri["witness"] is False and ev_tri["reorientable"] is True
+
+    # rank-2 totally cyclic 예: acyclic=False, totally_cyclic=True.
+    # convex=False인데, 이건 README §5에 문서화된 rank-2 특이 케이스(회로가 3원소라
+    # convex 정의가 자명하게 깨짐)이지 버그가 아니다 — CLAUDE.md 불변 조건 §3 참고.
     tc = Chirotope.from_vectors([(1, 0), (0, 1), (-1, -2), (-2, -1)])
     report("totally cyclic (rank2)", tc)
+    assert tc.is_valid() is True
+    assert tc.is_acyclic() is False
+    assert tc.is_totally_cyclic() is True
+    assert tc.is_convex_position() is False
+
     # 직렬화 왕복 점검
     d = quad.to_dict(); back = Chirotope.from_dict(d)
     assert back.signs == quad.signs and back.canonical_key() == quad.canonical_key()
     print("serialize round-trip OK")
+    print("core-contract assertions OK (valid/acyclic/totally_cyclic/convex/witness 실측값 고정)")

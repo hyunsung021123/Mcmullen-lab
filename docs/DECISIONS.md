@@ -183,3 +183,61 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   코드/신뢰 모델에 영향 없음.
 - 다른 참여자 리뷰 상태: agreed(human이 직접 두 가지를 실측 확인함). Codex·ChatGPT의
   실사용은 여전히 미검증으로 남음.
+
+## 0006 — ChatGPT 첫 실제 교차 리뷰: 0004 `contested` 판정 + 후속 수정
+
+- 날짜: 2026-07-12
+- 제안자: chatgpt(리뷰, 사람이 중계) → claude-code(검증·구현)
+- 결정: ChatGPT에게 0001~0004를 정식 교차 리뷰 요청(cross_review 형식)한 첫 사례.
+  ChatGPT의 판정: 0001 agreed / 0002 agreed / 0003 agreed(단, 추적성 보완 필요) /
+  **0004 contested**(2단계 브랜치 구조 자체는 동의하되, 신뢰 모델 핵심 파일의
+  CI-only 자동 병합에는 반대). claude-code가 각 주장을 실제 파일과 대조 검증했고
+  전부 사실로 확인됨. 사용자가 선택한 대응: (1) semantic core-contract CI를 지금
+  구축, (2) 빈 채로 열려있던 `develop→main` PR #4는 닫고 나중에 제대로 재작성,
+  (3) `docs/WORKBOARD.md`는 비권위 스냅샷으로 격하.
+- 배경/문제 (ChatGPT 지적 중 검증된 것들):
+  1. **핵심**: `om_core.py`/`criteria.py`/`theorist.py`의 `if __name__=="__main__":`
+     자체 테스트가 `print`만 하고 기대값을 `assert`하지 않음 — 예를 들어
+     `is_convex_position()`의 부호 판정이 통째로 뒤집혀도 `python om_core.py`는
+     예외 없이 종료해 CI가 green이 된다. "CI가 결정론적이다"와 "CI가 수학적 의미를
+     검증한다"는 서로 다른 명제라는 지적이 정확했다(직접 코드 확인 → 사실).
+  2. `ci.yml`이 `CLAUDE.md` 필수 명령 목록의 `python manager.py`를 실행하지 않음
+     (직접 확인 → 사실, 0003 작성 당시 제가 빠뜨린 것).
+  3. `.github/ISSUE_TEMPLATE/ai_task.md`, `.github/PULL_REQUEST_TEMPLATE.md`의
+     기준 브랜치 예시가 0004(develop 도입) 이후에도 `main @ <SHA>`로 남아있음
+     (직접 확인 → 사실, 0004 작성 시 갱신 누락).
+  4. `develop → main` 승격 PR #4가 실제로 담당·연결이슈·기준커밋·변경이유·blast
+     radius·테스트결과 전부 placeholder로 빈 채 열려 있었음(직접 API로 확인 →
+     사실). "승격 단위가 무제한으로 커질 수 있다"는 반박의 실제 사례.
+  5. `docs/AI_WORKFLOW.md` §7 HANDOFF의 "보낸 주체"가 `claude|codex|human`뿐이라,
+     사람이 ChatGPT 의견을 중계할 때 원 출처가 손실됨(직접 확인 → 사실).
+  6. `docs/WORKBOARD.md`가 Issue #5/PR #6 완료를 반영하지 못한 채 방치되어 GitHub
+     Issues와 실제로 어긋나 있었음(직접 확인 → 사실).
+- 검토한 대안과 기각 사유:
+  - 신뢰 모델 핵심 파일에 CODEOWNERS 기반 사람 승인 게이트 추가 → 사용자가 기각.
+    대신 semantic CI로 "CI-only 병합"이라는 원래 목표(루프 유지)를 지키면서 반박의
+    핵심(스모크 테스트 불충분)을 해소하는 쪽을 선택.
+  - PR #4를 지금 내용 채워서 그대로 승격 → 사용자가 기각. 지금은 사람이 실제로
+    "승격하겠다"고 판단한 시점이 아니므로, 준비 안 된 승격 PR을 열어두는 것 자체가
+    0004의 "간헐적·의도적 승인"이라는 원칙에 어긋남. 닫고 나중에 §9 체크리스트로
+    제대로 다시 열기로 함.
+  - `WORKBOARD.md`를 아예 제거 → 사용자가 기각(완전 제거보다 비권위 스냅샷으로
+    남겨 급할 때 참고할 여지를 둠).
+- 영향 범위:
+  - `om_core.py`/`criteria.py`/`theorist.py`: **판별 로직 자체는 무변경.**
+    `if __name__=="__main__":` 자체 테스트 블록에만 실측 기대값 assertion 추가
+    (예: `quad.is_convex_position() is True`, `tc.is_totally_cyclic() is True` 등 —
+    전부 실제 실행해서 확인한 현재 값을 고정한 회귀 테스트).
+  - `.github/workflows/ci.yml`: `python manager.py` 단계 추가.
+  - `.github/ISSUE_TEMPLATE/ai_task.md`, `.github/PULL_REQUEST_TEMPLATE.md`: 브랜치
+    예시 `main` → `develop`로 수정.
+  - `AGENTS.md`: `develop` 직접 push 금지 및 `develop` 기준 분기 절차 명시.
+  - `docs/AI_WORKFLOW.md`: §2/§6-1에 semantic CI 도입 반영, §7 HANDOFF에 "원 제안/
+    검토 출처" 필드 추가, §9에 승격 체크리스트 템플릿 추가, §11(신설)에 WORKBOARD
+    비권위 정책 명시.
+  - `docs/WORKBOARD.md`: 첫머리에 "source of truth는 GitHub Issues" 명시, Issue
+    #5/PR #6 완료 소급 기록.
+  - PR #4: 닫음(아래 참고).
+- 다른 참여자 리뷰 상태: agreed — ChatGPT의 지적을 전부 사실로 검증했고 사용자가
+  대응 방향을 결정했으므로 이 사이클은 완결. 이 0006 자체에 대한 교차 리뷰는 아직
+  없음(다음 ChatGPT 리뷰 때 확인 대상).
