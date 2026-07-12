@@ -1,11 +1,13 @@
-# docs/WORKBOARD.md — 활성 작업 인덱스
+# docs/WORKBOARD.md — 활성 작업 인덱스 (비권위 스냅샷)
+
+> **source of truth는 GitHub Issues의 `ai-task` 라벨 검색입니다.** 이 파일은 매 PR마다
+> 갱신되지 않는 **비권위(non-authoritative) 스냅샷**이며, `develop → main` 승격 시점
+> (`docs/AI_WORKFLOW.md` §9)에만 동기화됩니다. 지금 당장 활성 작업을 정확히 보려면
+> Issues를 `ai-task` 라벨로 검색하세요. (0006 — 매번 갱신 의무가 실제로 지켜지지 않아
+> Issues와 이 파일이 어긋난 사례가 있었던 것을 반영해 정책을 낮췄습니다.)
 
 지금 누가 무슨 작업을 하고 있는지 **한눈에 보는 인덱스**입니다. 상세 로그가 아닙니다 —
 작업의 세부 진행/논의는 해당 **Issue와 PR**에, 설계 결정은 `docs/DECISIONS.md`에 둡니다.
-
-> 규칙: 이 파일에는 **활성 작업의 인덱스만** 적는다(상세 로그 금지). 여러 AI가 상세
-> 내용을 이 파일 하나에 동시에 append하면 병합 충돌이 잦아지므로, 세부는 Issue/PR에 둔다.
-> 상태가 `done`이 된 행은 일정 기간 후 아래 "완료" 섹션으로 옮기거나 정리한다.
 
 ## 활성 작업
 
@@ -24,7 +26,6 @@
 
 | Issue | 작업 | 담당 | 병합 PR | 완료일 |
 |---|---|---|---|---|
-| — | 협업 인프라 정비(문서·템플릿) | claude | (이 브랜치) | 2026-07-11 |
-
-
-<!-- verification note: develop/main branch protection tested 2026-07-12 -->
+| — | 협업 인프라 정비(문서·템플릿) | claude | (svtmrg 브랜치 직접) | 2026-07-11 |
+| #5 | store.py 정리 — ResultsStore.to_dict() 죽은 코드 제거 | codex | #6 | 2026-07-12 |
+| #7 | semantic core-contract CI + 협업 문서 정합성 (ChatGPT 리뷰 0006 반영) | claude | (진행 중) | — |

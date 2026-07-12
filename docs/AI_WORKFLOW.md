@@ -48,12 +48,14 @@ develop                           ← 통합 브랜치. claude↔codex↔chatgpt
   Issue/PR에 **명시적 인수인계(HANDOFF)** 를 기록한 뒤에만 한다. 남의 브랜치를 임의로
   덮어쓰지 않는다.
 
-> **현재 상태(2026-07-12 기준)**: `criteria.py`/`om_core.py`/`theorist.py` 같은 신뢰 모델
-> 핵심 파일도 지금은 `develop`에서 CI만 통과하면 자동 병합된다 — CODEOWNERS 같은
-> 파일 단위 사람 승인 게이트는 아직 걸지 않기로 했다(신뢰 모델 자체가 아직 실행/검증
-> 전이라 계속 바뀔 수 있으므로). 안전망은 CI와, `main` 승격 시점의 사람 리뷰뿐이다.
-> 신뢰 모델이 안정되면 `.github/CODEOWNERS` + "Require review from Code Owners"로
-> 이 파일들만 `develop`에서도 사람 승인이 필요하게 바꾸는 걸 재검토한다.
+> **현재 상태(0006 갱신)**: `criteria.py`/`om_core.py`/`theorist.py` 같은 신뢰 모델
+> 핵심 파일도 `develop`에서 CI만 통과하면 자동 병합된다 — CODEOWNERS 같은 파일 단위
+> 사람 승인 게이트는 걸지 않는다. 대신 `docs/DECISIONS.md` 0006(ChatGPT 첫 리뷰,
+> 0004 `contested`)을 반영해 **CI 자체를 semantic하게 강화**했다: `om_core.py`/
+> `criteria.py`/`theorist.py`의 자체 테스트가 이제 실측 기대값을 실제로 `assert`한다
+> (이전엔 `print`만 하고 값 자체는 검증하지 않아, 판별 로직이 반대로 뒤집혀도 CI가
+> 통과할 수 있었다). CI-only 병합이 안전한 건 "CI가 결정론적이라서"가 아니라
+> "CI가 이제 수학적 의미를 실제로 검증해서"다 — 이 둘은 다른 명제였다.
 
 > branch protection(“main/develop 직접 push 금지”, “머지 전 CI 필수”, “develop은 승인
 > 불필요·main은 승인 필수”)의 **기술적 강제**는 GitHub 저장소 설정이며 **사람(관리자)만**
@@ -99,8 +101,10 @@ python om_core.py                # 검증 앵커
 4. PR 생성 — **대상 브랜치는 `develop`** (`.github/PULL_REQUEST_TEMPLATE.md` 형식).
 5. PR을 Issue와 연결(`Closes #<issue>` 등).
 6. 필요 시 HANDOFF 또는 교차 리뷰 요청 작성.
-7. `docs/WORKBOARD.md`의 해당 행 상태를 갱신(인덱스만).
-8. CI가 통과하면 §6-1에 따라 **사람 개입 없이** `develop`에 병합된다.
+7. CI가 통과하면 §6-1에 따라 **사람 개입 없이** `develop`에 병합된다.
+
+(`docs/WORKBOARD.md`는 매 작업마다 갱신하지 않는다 — §11 참고. 활성 작업 현황이
+궁금하면 GitHub Issues의 `ai-task` 라벨을 검색하는 게 항상 최신이다.)
 
 ## 6-1. `develop` 자동 병합 코디네이터 (Claude Code)
 
@@ -114,8 +118,9 @@ python om_core.py                # 검증 앵커
 
 위 세 가지가 확인되면 **사람에게 묻지 않고 병합한다.** Codex가 연 PR도 동일 기준으로
 Claude Code가 병합할 수 있다(Codex 자체에 병합 권한이 있다면 스스로 해도 무방 — 둘 다
-같은 기준을 따른다). 이 자동 병합은 신뢰 모델 핵심 파일도 예외 없이 포함한다(위 §2의
-"현재 상태" 참고 — 추후 CODEOWNERS 도입 시 이 절이 갱신된다).
+같은 기준을 따른다). 이 자동 병합은 신뢰 모델 핵심 파일도 예외 없이 포함한다 — 단,
+위 §2의 "현재 상태"대로 이제 CI가 그 파일들의 실측 기대값을 실제로 검증하기 때문에
+안전하다(0006). CODEOWNERS 도입 여부는 재검토 대상으로 남아 있다.
 
 ## 7. 인수인계(HANDOFF) 형식
 
@@ -124,7 +129,8 @@ Claude Code가 병합할 수 있다(Codex 자체에 병합 권한이 있다면 �
 
 ```markdown
 ## HANDOFF
-- 보낸 주체: claude | codex | human
+- 전달 주체: claude | codex | human            (실제로 이 HANDOFF를 기록/전달한 주체)
+- 원 제안/검토 출처: claude | codex | chatgpt | human   (의견 자체가 누구에게서 나왔나)
 - 받을 주체: claude | codex | chatgpt(리뷰) | human
 - 기준 커밋: <SHA>
 - 현재 상태:
@@ -136,6 +142,10 @@ Claude Code가 병합할 수 있다(Codex 자체에 병합 권한이 있다면 �
 - 수정하면 안 되는 부분:
 - 요청하는 검토/작업:
 ```
+
+`전달 주체`와 `원 제안/검토 출처`를 분리한 이유(0006): 사람이 ChatGPT의 검토 의견을
+대신 옮기는 경우 "전달 주체=human, 원 출처=chatgpt"로 남겨야, 나중에 "사람이 직접
+판단한 내용"과 "ChatGPT 의견을 사람이 중계한 내용"이 뒤섞이지 않는다.
 
 ChatGPT는 읽기 전용이므로, ChatGPT에게 리뷰를 넘길 때는 사람이 PR/이슈 링크와 CI 결과를
 전달하고, ChatGPT의 회신을 사람이 다시 이슈/PR 코멘트로 옮긴다(출처 명시).
@@ -153,13 +163,32 @@ ChatGPT는 읽기 전용이므로, ChatGPT에게 리뷰를 넘길 때는 사람�
 
 `main`은 "안전 저장소"다 — 루프가 몇 번을 돌든 사람이 승인하기 전까지는 움직이지 않는다.
 
+승격 PR은 **비어있는 채로 열어두지 않는다**(0006 — 실제로 그런 사례(#4)가 있었다:
+`develop→main` PR이 담당·기준 커밋·변경 이유·blast radius·테스트 결과가 전부
+placeholder로 빈 채 방치됨). 승격을 시작하는 시점에 아래 체크리스트를 그 PR 본문에
+채운다:
+
+```markdown
+## 승격 체크리스트 (develop → main)
+- 기준 main SHA: <SHA>
+- 승격할 develop SHA: <SHA>
+- 포함되는 Issue/PR 목록: #.. #.. #..
+- 신뢰 모델 핵심 파일(om_core.py/criteria.py/theorist.py) 변경 여부와 목록:
+- 아직 pending/contested인 교차 리뷰가 있는가:
+- 이 head SHA에서 실행된 CI 결과(링크):
+- 알려진 위험 / 롤백 시 되돌릴 단위:
+- 승격 후 다시 실행해 확인할 연구 검증(있다면):
+```
+
+절차:
 1. 사람이 "이 정도면 됐다"고 판단하는 시점에(정해진 주기 없음, 전적으로 사람의 재량),
-   `develop`에서 `main`으로 PR을 연다.
-2. 이 PR은 `develop`이 그동안 축적한 커밋 전체를 담는다 — 리뷰 시 개별 커밋보다는
-   `docs/DECISIONS.md`에 쌓인 결정 항목들과 CI 결과를 함께 본다.
+   `develop`에서 `main`으로 PR을 열고 위 체크리스트를 채운다. **채우지 않은 채로 방치된
+   승격 PR은 열어두지 않는다** — 지금 승격할 준비가 안 됐으면 닫고, 준비됐을 때 다시 연다.
+2. 리뷰 시 개별 커밋보다는 `docs/DECISIONS.md`에 쌓인 결정 항목들과 CI 결과를 함께 본다.
 3. 사람이 diff를 검토하고 승인해야만 병합된다(branch protection이 `main`에 이를
    강제한다 — §2 참고).
-4. 병합 후 `docs/WORKBOARD.md`의 "완료" 섹션을 정리한다.
+4. 병합 후 `docs/WORKBOARD.md`를 최신 상태로 동기화한다(§11 참고 — WORKBOARD는
+   비권위 스냅샷이라 이 시점에만 동기화하면 된다).
 
 ## 10. 운영 예시 (병렬 대안 비교 + 2단계 승격)
 
@@ -175,3 +204,15 @@ ChatGPT는 읽기 전용이므로, ChatGPT에게 리뷰를 넘길 때는 사람�
   → (루프 여러 번 반복) ...
   → 사람이 "이제 됐다" 판단 → develop → main PR → 사람이 승인 → main 승격
 ```
+
+## 11. `docs/WORKBOARD.md` 정책 (0006 갱신)
+
+**`docs/WORKBOARD.md`는 권위 있는 상태가 아니라 비권위(non-authoritative) 스냅샷이다.**
+활성 작업의 살아있는 진실은 언제나 **GitHub Issues의 `ai-task` 라벨 검색**이다 — 매
+PR마다 WORKBOARD를 갱신하는 의무를 없앤 이유는, 실제로 그 의무가 지켜지지 않아
+(Issue #5/PR #6이 완료된 뒤에도 WORKBOARD엔 반영되지 않은 채 방치된 사례가 있었다)
+GitHub Issues와 WORKBOARD 두 상태가 서로 어긋나는 위험이 이미 현실화됐기 때문이다.
+
+- WORKBOARD는 **§9의 `develop → main` 승격 시점에만** 동기화한다.
+- 문서 첫머리에 "source of truth는 GitHub Issues"임을 명시해 둔다.
+- 급하게 지금 활성 작업을 보고 싶으면 Issues를 `ai-task` 라벨로 검색한다.

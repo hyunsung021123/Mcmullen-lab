@@ -41,10 +41,12 @@
 
 ```bash
 git fetch origin
-git status --short --branch     # 깨끗한 작업 트리 확인
+git checkout develop && git pull --ff-only origin develop   # main이 아니라 develop 기준
+git checkout -b codex/<issue>-<slug>                          # 여기서 작업 브랜치 분기
 python -m py_compile *.py        # 문법/임포트
 python om_core.py                # 검증 앵커 자체 테스트
 ```
 
-범위를 벗어난 변경 금지, 다른 AI 소유 브랜치 직접 수정 금지, `main` 직접 push 금지,
-충돌 시 force push 금지 — 자세한 규칙은 `docs/AI_WORKFLOW.md`.
+범위를 벗어난 변경 금지, 다른 AI 소유 브랜치 직접 수정 금지, **`main`·`develop` 둘 다
+직접 push 금지**(PR을 통해서만 병합 — `develop`은 CI만 통과하면 승인 없이 병합되지만
+그래도 PR은 거쳐야 함), 충돌 시 force push 금지 — 자세한 규칙은 `docs/AI_WORKFLOW.md`.

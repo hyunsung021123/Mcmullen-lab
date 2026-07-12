@@ -179,3 +179,12 @@ if __name__ == "__main__":
     print("accepted:", rep.accepted, "| target_hit:", rep.is_target_hit)
     print("satisfied:", rep.satisfied, "| failed:", rep.failed)
     print("active:", cs.active_summary())
+
+    # core-contract: require(valid,acyclic) 둘 다 만족하고 forbid(totally_cyclic)는
+    # 안 걸리므로 accepted=True. target(not_reorientable_to_convex)은 tri가 재배향으로
+    # convex 가능하므로 미달성 → target_hit=False. (실측값 고정, ChatGPT 리뷰 0006 반영)
+    assert rep.accepted is True
+    assert rep.is_target_hit is False
+    assert rep.satisfied == ["valid", "acyclic"]
+    assert rep.failed == ["totally_cyclic", "not_reorientable_to_convex"]
+    print("core-contract assertions OK")
