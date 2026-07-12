@@ -28,4 +28,4 @@
 |---|---|---|---|---|
 | — | 협업 인프라 정비(문서·템플릿) | claude | (svtmrg 브랜치 직접) | 2026-07-11 |
 | #5 | store.py 정리 — ResultsStore.to_dict() 죽은 코드 제거 | codex | #6 | 2026-07-12 |
-| #7 | semantic core-contract CI + 협업 문서 정합성 (ChatGPT 리뷰 0006 반영) | claude | (진행 중) | — |
+| #7 | semantic core-contract CI + 협업 문서 정합성 (ChatGPT 리뷰 0006 반영) | claude | #8 | 2026-07-12 |
