@@ -86,7 +86,6 @@ class ResultsStore:
         return min(wins, key=lambda r: r.n) if wins else None
 
     def to_dict(self) -> dict:
-        self.run.setdefault("finished_at", _now())
         self.run["finished_at"] = _now()
         bw = self.best_witness()
         return {
