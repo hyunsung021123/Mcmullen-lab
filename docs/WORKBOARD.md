@@ -25,3 +25,6 @@
 | Issue | 작업 | 담당 | 병합 PR | 완료일 |
 |---|---|---|---|---|
 | — | 협업 인프라 정비(문서·템플릿) | claude | (이 브랜치) | 2026-07-11 |
+
+
+<!-- verification note: develop/main branch protection tested 2026-07-12 -->
