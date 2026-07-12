@@ -297,3 +297,32 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   - `docs/AI_WORKFLOW.md` §6-2(신설): auto-merge 사용 절차와 예외(`main` 제외) 명시.
   - 판별 로직/CI 자체는 무변경 — 병합 트리거 방식만 바뀜.
 - 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
+
+## 0009 — Codex가 여는 `develop` PR에도 auto-merge 확대 적용
+
+- 날짜: 2026-07-12
+- 제안자: human(질문 제기) → claude-code(구현)
+- 결정: PR #17(Codex 작성, `_compile_relations` 캐싱)이 CI green이었는데도 auto-merge가
+  안 걸려 있어 사람이 "왜 자동 병합 안 하냐"고 물어야 했음. 원인은 0008이 "PR을 여는
+  에이전트가 auto-merge를 건다"고 했지만 실제로는 Claude Code가 여는 PR에만 적용되고
+  있었기 때문. 사용자에게 "Codex PR도 CI 통과 시 자동 병합" vs "Claude Code가 diff
+  검토 후 수동 병합 유지" 중 선택지를 제시했고, 사용자가 전자를 선택.
+  이제부터 Claude Code는 Codex(또는 다른 에이전트)가 연 PR을 인지하는 즉시 auto-merge를
+  건다. 단, 신뢰 모델 핵심 파일이 아니어도 다른 모듈이 그 반환값에 의존하는 방식이라
+  안전성이 자명하지 않은 변경(예: 캐싱 도입으로 인한 mutation 위험)은 auto-merge 걸기
+  전에 그 부분만 diff로 빠르게 확인한다 — CI가 커버하지 못하는 지점이기 때문.
+- 배경: PR #17 자체는 diff 검토 결과 실제로 안전했음(`by_max`가 저장소 전체에서 읽기
+  전용으로만 쓰임을 직접 확인). 문제는 "검증 자체"가 아니라 "auto-merge를 거는 것을
+  깜빡해서 CI green 상태로 방치된 것"이었다.
+- 검토한 대안과 기각 사유:
+  - Codex PR도 지금처럼 Claude Code가 CI 통과를 폴링해서 수동 병합 → 기각(사용자가
+    비추천 옵션으로 선택 안 함). 0004/0006의 "CI-only 병합이 안전하다"는 원칙과
+    일관되지 않게 Claude Code가 여는 PR과 Codex가 여는 PR을 차별 대우할 이유가 없음.
+  - CI green이면 diff 검토 없이 무조건 즉시 auto-merge → 기각. `generator.py`처럼
+    신뢰 모델 핵심 파일은 아니지만 다른 모듈이 강하게 의존하는 파일의 변경은,
+    CI(기존 자체 테스트)가 우연히 놓칠 수 있는 안전성 가정(예: 캐시 mutation)이 있을
+    수 있어 최소한의 diff 확인은 유지하기로 함.
+- 영향 범위:
+  - `docs/AI_WORKFLOW.md` §6-2에 "Codex(또는 다른 에이전트)가 여는 PR" 하위 절 추가.
+  - 판별 로직/CI 자체는 무변경 — 병합 코디네이터의 실행 절차만 명확화.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
