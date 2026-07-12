@@ -10,6 +10,7 @@ generator.py — Generator Agent: Chirotope 공리를 만족하는 uniform OM �
 accept 콜백으로 조기 필터링할 수 있다(require/forbid 통과분만 방출).
 """
 from __future__ import annotations
+from functools import lru_cache
 from itertools import combinations, product
 from typing import Callable, Iterator, Optional
 
@@ -27,6 +28,7 @@ def _parity_and_key(t):
     return tuple(arr), (1 if swaps % 2 == 0 else -1)
 
 
+@lru_cache(maxsize=None)
 def _compile_relations(n: int, r: int):
     subs = sorted(combinations(range(n), r))
     idx = {s: i for i, s in enumerate(subs)}
@@ -199,7 +201,13 @@ def generate(n: int, r: int, *, backend: str = "backtracking", **kw) -> Iterator
 
 if __name__ == "__main__":
     # 데모: d=2 (r=3), n=5 에서 GP-적법 uniform OM 을 몇 개 만들어 본다.
-    got = list(generate_backtracking(5, 3, dedup=True, max_candidates=8))
+    _compile_relations.cache_clear()
+    first_run = list(generate_backtracking(5, 3, dedup=True, max_candidates=8))
+    second_run = list(generate_backtracking(5, 3, dedup=True, max_candidates=8))
+    assert [ch.canonical_key() for ch in first_run] == [ch.canonical_key() for ch in second_run]
+    assert _compile_relations.cache_info().hits > 0
+
+    got = second_run
     print(f"n=5,r=3 GP-적법 후보 {len(got)}개 생성 (중복 제거, 최대 8개)")
     for ch in got[:3]:
         print("  acyclic=%-5s convex=%-5s tot_cyclic=%-5s" %
