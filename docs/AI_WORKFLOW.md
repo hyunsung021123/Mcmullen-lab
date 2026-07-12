@@ -67,7 +67,7 @@ develop                           ← 통합 브랜치. claude↔codex↔chatgpt
 브랜치·PR을 잇는 식별자다. 이슈에는 목표·범위·담당·기준 브랜치/커밋·수용 조건·필수
 테스트·신뢰 모델 영향·상태를 적는다.
 
-## 4. 작업 시작 절차
+## 4. 작업 시작 절차 — 아래 `fetch`/`pull`은 필수, 생략 금지(0007)
 
 ```bash
 git fetch origin
@@ -75,6 +75,13 @@ git switch develop && git pull --ff-only origin develop   # 기준 최신화 (ma
 git switch -c <agent>/<issue>-<slug> develop                # develop에서 분기
 git status --short --branch                                  # 깨끗한 작업 트리 확인
 ```
+
+이 두 줄(`fetch`/`pull`)은 권장이 아니라 **모든 작업의 필수 첫 단계**다(0007). 특히
+Codex 로컬 모드처럼 사람의 로컬 클론을 통해 간접적으로 작업하는 경우, 그 클론은
+Claude Code(클라우드)가 GitHub에 병합한 변경과 **자동으로 동기화되지 않는다** — 로컬
+클론과 GitHub 사이의 유일한 연결은 사람 또는 에이전트가 명시적으로 실행하는
+`git fetch`/`pull`/`push`뿐이다. 이 단계를 건너뛰고 오래된 기준에서 시작한 작업은
+**무효로 간주하고, 최신 `develop` 기준으로 다시 시작한다.**
 
 - Issue를 생성/확인하고, 담당 AI와 브랜치 이름, **기준 커밋 SHA**를 이슈에 기록한다.
 - 기존 미커밋 변경을 임의로 포함하지 않는다(내 작업이 아니면 건드리지 않는다).
@@ -216,3 +223,28 @@ GitHub Issues와 WORKBOARD 두 상태가 서로 어긋나는 위험이 이미 �
 - WORKBOARD는 **§9의 `develop → main` 승격 시점에만** 동기화한다.
 - 문서 첫머리에 "source of truth는 GitHub Issues"임을 명시해 둔다.
 - 급하게 지금 활성 작업을 보고 싶으면 Issues를 `ai-task` 라벨로 검색한다.
+
+## 12. 로컬 자동 동기화 (선택, 사람 전용) (0007)
+
+Claude Code(클라우드)는 사람의 로컬 PC에 **접근할 방법이 전혀 없다** — 유일한 공유
+채널은 GitHub이며, 로컬 클론은 사람 또는 로컬 에이전트(Codex 로컬 모드 등)가 직접
+`git pull`을 실행해야만 최신화된다. §4의 "작업 전 fetch/pull 필수"가 근본 대책이지만,
+그 단계가 실제로는 누락되기 쉬우므로(사람이 깜빡하거나, Codex 세션이 그 단계를
+생략하고 바로 작업을 시작하는 경우) 보조 수단으로 `scripts/local-autopull.ps1`을
+제공한다.
+
+- 이 스크립트는 **`develop`을 fast-forward-only로만 pull**한다 — merge/rebase/force
+  없음.
+- 현재 체크아웃된 브랜치가 `develop`이 아니거나, 커밋되지 않은 변경이 있거나,
+  fast-forward가 불가능하면 **아무 것도 하지 않고 로그만 남긴다**(사람이 직접
+  판단해야 하는 상황을 스크립트가 임의로 처리하지 않기 위함).
+- Windows 작업 스케줄러(Task Scheduler)에 주기적 실행으로 등록해 사용한다:
+  1. 작업 스케줄러 → "기본 작업 만들기"
+  2. 트리거: 예) 15분마다 반복
+  3. 동작: 프로그램 시작
+     - 프로그램/스크립트: `powershell.exe`
+     - 인수 추가: `-ExecutionPolicy Bypass -File "C:\경로\Mcmullen-lab\scripts\local-autopull.ps1" -RepoPath "C:\경로\Mcmullen-lab"`
+  4. 실행 로그는 `RepoPath\autopull.log`에 쌓인다.
+- 이 스크립트는 **사람의 로컬 환경에만 관여**하며 저장소의 신뢰 모델·CI·병합 절차에는
+  영향을 주지 않는다. develop이 아닌 작업 브랜치에서 작업 중일 때는 스크립트가
+  브랜치를 바꾸지 않으므로 안전하게 계속 실행해 둘 수 있다.

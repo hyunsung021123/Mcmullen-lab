@@ -241,3 +241,35 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 다른 참여자 리뷰 상태: agreed — ChatGPT의 지적을 전부 사실로 검증했고 사용자가
   대응 방향을 결정했으므로 이 사이클은 완결. 이 0006 자체에 대한 교차 리뷰는 아직
   없음(다음 ChatGPT 리뷰 때 확인 대상).
+
+## 0007 — 로컬 동기화 하드닝: 작업 전 pull 필수화 + Windows 자동 pull 스크립트
+
+- 날짜: 2026-07-12
+- 제안자: human(질문 제기) → claude-code(구현)
+- 결정: Claude Code(클라우드)가 병합한 변경이 사람의 Windows 로컬 클론에 자동으로
+  반영되지 않는다는 사실을 확인한 뒤, 사용자가 "①작업 전 pull을 필수화하고,
+  ②로컬 자동 pull 스크립트도 원한다"고 명시적으로 요청 — 둘 다 구현.
+  1. `AGENTS.md`·`docs/AI_WORKFLOW.md` §4의 "작업 전 git fetch/pull"을 권장에서
+     **필수 선행 단계**로 격상(생략한 작업은 무효로 간주하고 재시작).
+  2. `scripts/local-autopull.ps1` 추가 — Windows 작업 스케줄러에 등록해 쓰는
+     fast-forward-only 자동 pull 스크립트(`docs/AI_WORKFLOW.md` §12).
+- 배경: 사용자가 "내 로컬 폴더에도 자동으로 push된거야?"라고 질문 → 아니라고 답변.
+  Claude Code는 격리된 클라우드 컨테이너에서 실행되며 사람의 PC 파일시스템에 접근할
+  방법이 전혀 없다(정책이 아니라 아키텍처상 제약). 유일한 공유 채널은 GitHub이고,
+  로컬 클론은 사람 또는 로컬 에이전트가 명시적으로 pull해야만 최신화된다. 이는
+  이전에 확인된 "Codex 로컬 ↔ GitHub" 동기화 질문과 대칭인 문제.
+- 검토한 대안과 기각 사유:
+  - Claude Code가 사람의 PC에 직접 쓰기를 시도하는 방법 → 존재하지 않음(네트워크/
+    파일시스템 접근 자체가 불가능). 아키텍처 제약이므로 대안이 아니라 불가능.
+  - 자동 pull 스크립트가 merge/rebase까지 수행 → 기각. fast-forward-only로 제한해
+    로컬 작업 중인 커밋을 스크립트가 임의로 되돌리거나 충돌을 만들 위험을 원천 차단.
+  - 스크립트가 임의로 브랜치를 `develop`으로 전환 → 기각. 사람/Codex가 다른 브랜치에서
+    작업 중일 수 있으므로, 현재 브랜치가 `develop`일 때만 동작하게 제한.
+- 영향 범위:
+  - `AGENTS.md`, `docs/AI_WORKFLOW.md` §4: "필수, 생략 금지" 문구 추가(판별 로직
+    무변경, 절차 문서만).
+  - `docs/AI_WORKFLOW.md` §12(신설): 로컬 자동 동기화 스크립트 설명·Task Scheduler
+    등록 절차.
+  - `scripts/local-autopull.ps1`(신규): 사람의 로컬 Windows 환경에서만 실행되는
+    PowerShell 스크립트. 저장소의 CI·병합 절차·신뢰 모델에는 영향 없음.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
