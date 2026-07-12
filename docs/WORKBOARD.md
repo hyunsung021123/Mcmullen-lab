@@ -13,7 +13,7 @@
 
 | Issue | 작업 | 담당 | 브랜치 | 상태 | 마지막 갱신 |
 |---|---|---|---|---|---|
-| — | (아직 등록된 활성 작업 없음) | — | — | — | — |
+| #16 | GP 관계 테이블 컴파일 캐싱 | codex | codex/16-cache-compile-relations | review | 2026-07-12 |
 
 <!-- 예시 행(실제 작업이 생기면 이 형식으로 추가):
 | #12 | 재배향 프로파일링 | codex | codex/12-profile-reorientation | active | 2026-07-12 |
