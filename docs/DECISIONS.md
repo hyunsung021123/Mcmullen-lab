@@ -326,3 +326,45 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   - `docs/AI_WORKFLOW.md` §6-2에 "Codex(또는 다른 에이전트)가 여는 PR" 하위 절 추가.
   - 판별 로직/CI 자체는 무변경 — 병합 코디네이터의 실행 절차만 명확화.
 - 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
+
+## 0010 — 기본 탐색 조건에서 acyclic/totally_cyclic 제거 (수학적으로 불필요함을 검증)
+
+- 날짜: 2026-07-13
+- 제안자: human(수학적 코드 구조 질의 → 직접 논증) → claude-code(코드로 실측 검증·구현)
+- 결정: `config.example.yaml`/`dashboard.py`의 기본 탐색 조건에서 `acyclic=require`,
+  `totally_cyclic=forbid` 두 항목을 제거한다. 남는 기본 조건은
+  `not_reorientable_to_convex=target`(+ 항상 자동 적용되는 `valid`) 하나뿐이다.
+- 배경/수학적 근거 (사람이 논증하고 claude-code가 코드로 검증):
+  1. **`totally_cyclic=forbid`는 `acyclic=require`와 함께일 때 항상 자동 충족되는
+     중복 필터다.** `acyclic(M)`이면 전부-양(+) covector가 존재하는데, 이는 "전부
+     비음(≥0)인 covector가 영벡터뿐"이어야 하는 `totally_cyclic(M)`의 정의와 모순된다
+     → `acyclic(M) ⟹ ¬totally_cyclic(M)`은 항상 성립. rank 2/3/4, n up to 8~9에서
+     GP-적법 uniform chirotope를 최대 2만 개까지 전수 검사해 두 성질이 동시에 성립한
+     사례 0건 확인(실측, 이 세션에서 직접 실행).
+  2. **`acyclic=require` 자체도 witness 판정 정확성에는 불필요하다.**
+     `is_reorientable_to_convex()`는 재배향 궤도(orbit) 전체를 훑어 "이 궤도 안에
+     convex position이 되는 원소가 있는가"를 판정하는데, 이건 궤도 불변량이라
+     시작 대표원소가 acyclic인지와 무관하게 결과가 같다.
+  3. **현재 구현이 지금까지 안전했던 이유는 우연이었다.** `generator.py`는 dedup
+     (궤도 중복 제거)이 accept(acyclic 등 조건 검사)보다 먼저 실행되는 구조라,
+     이론적으로는 "궤도의 첫 대표가 non-acyclic이면 그 궤도 전체가 판정 없이
+     사라질 위험"이 있었다. 하지만 rank 3/4, n=6~8(최대 20만 개 궤도)에서 전수
+     검증한 결과, 현재 DFS 순회 순서(+1 우선 시도)가 **모든 궤도에서 예외 없이
+     acyclic 대표를 먼저 찾아냈다** — 그래서 지금까지 손실이 없었을 뿐, 보장된
+     성질은 아니다.
+- 검토한 대안과 기각 사유:
+  - `generator.py`의 dedup/accept 순서를 바꿔 위 3번의 잠재적 위험 자체를 봉합 →
+    이번 범위에서는 보류. acyclic/totally_cyclic을 기본 조건에서 빼면 그 위험
+    자체가 기본 파이프라인에서는 무의미해지므로, 더 침습적인 core 로직 변경은
+    별도 이슈로 미룬다(사용자가 나중에 acyclic/totally_cyclic을 다시 켤 경우에는
+    여전히 잠재적 위험으로 남아있음 — 문서에 명시).
+  - `criteria.py`의 `REGISTRY`에서 `acyclic`/`totally_cyclic` 항목 자체를 제거 → 기각.
+    다른 연구 목적(예: totally-cyclic 영역만 따로 탐색)으로는 여전히 유효한 개별
+    조건이라 REGISTRY에는 남겨두고 기본값만 끈다.
+- 영향 범위:
+  - `config.example.yaml`: 기본 `criteria`에서 두 줄 제거, 근거 주석 추가.
+  - `README.md`: §7 예시, §8 결과 예시 JSON을 새 기본값에 맞게 갱신.
+  - `dashboard.py`: 사이드바 토글 기본값을 `acyclic`/`totally_cyclic` 모두 "미사용"으로
+    변경(REGISTRY에서 제거하는 게 아니라 기본 선택만 변경 — 사용자가 여전히 켤 수 있음).
+  - `om_core.py`/`criteria.py`/`generator.py`의 판정·생성 로직 자체는 무변경.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).

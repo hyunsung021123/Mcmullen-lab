@@ -146,12 +146,12 @@ def render_design_tab(is_running: bool):
 
         st.subheader("조건")
         st.caption("valid(Grassmann–Plücker 공리를 만족하는 적법한 uniform OM)는 항상 "
-                   "자동으로 적용됩니다.")
+                   "자동으로 적용됩니다. acyclic/totally_cyclic은 witness 판정에는 "
+                   "불필요함이 확인되어(docs/DECISIONS.md 0010) 기본값이 '미사용'입니다 — "
+                   "필요하면 여전히 켤 수 있습니다.")
         for name, info_c in TOGGLEABLE.items():
             cols = st.columns([3, 2] if name in PARAM_CRITERIA else [1])
-            default = ("target" if name == "not_reorientable_to_convex"
-                       else "require" if name == "acyclic"
-                       else "forbid" if name == "totally_cyclic" else "off")
+            default = "target" if name == "not_reorientable_to_convex" else "off"
             cols[0].selectbox(info_c["label"], MODES, index=MODES.index(default),
                               format_func=lambda m: MODE_LABELS[m],
                               help=info_c["help"], key=f"m_{name}")
