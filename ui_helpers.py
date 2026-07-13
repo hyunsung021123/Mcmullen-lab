@@ -17,6 +17,7 @@ from typing import Optional
 
 from criteria import CriteriaSet
 from om_classes import CLASS_REGISTRY, has_generator
+from theorist import PROPOSER_ROLES as PROPOSER_ROLE_DEFAULTS
 
 
 # ───────────────────────── 신뢰 수준 표시(섹션 9 A/B/C/D) ─────────────────────────
@@ -263,5 +264,10 @@ if __name__ == "__main__":
 
     assert best_result_headline({"d": 5}, {"best_upper_bound": 11}) == "ν(5) ≤ 11"
     assert best_result_headline({"d": 5}, {"best_upper_bound": None}) is None
+
+    # PROPOSER_ROLE_DEFAULTS — theorist.py의 5개 역할 프롬프트를 그대로 재노출하는지
+    assert set(PROPOSER_ROLE_DEFAULTS) == {"geometer", "combinatorialist", "om_expert",
+                                           "graph_expert", "sat_expert"}
+    assert all(isinstance(v, str) and v for v in PROPOSER_ROLE_DEFAULTS.values())
 
     print("ui_helpers.py core-contract assertions OK")

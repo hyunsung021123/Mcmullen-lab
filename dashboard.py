@@ -62,7 +62,8 @@ def _build_search_config(pending: dict) -> SearchConfig:
         discovery_enabled=bool(pending["discovery_on"]),
         memory_path=(pending["memory_path"].strip() or None),
         debate_rounds=int(pending["debate_rounds"]),
-        llm_enabled=bool(pending["llm_on"]), llm_model=pending["llm_model"])
+        llm_enabled=bool(pending["llm_on"]), llm_model=pending["llm_model"],
+        llm_personas=pending.get("llm_personas", {}))
 
 
 # ───────────────────────────── 탭 1: 실험 설계 ─────────────────────────────
@@ -119,6 +120,15 @@ def render_design_tab(is_running: bool):
             llm_model = st.text_input("Ollama 모델 이름", "qwen2.5", disabled=not llm_on)
             debate_rounds = st.number_input("토론 라운드 수", 1, 6, 2, disabled=not llm_on)
 
+            st.caption("아래는 각 전문가 역할에게 주는 system prompt다. 바꿔도 채택 여부를 "
+                      "정하는 결정론적 게이트(proof_checker/counterexample_hunter)는 "
+                      "전혀 영향받지 않는다 — 제안자의 프롬프트만 바뀐다.")
+            llm_personas = {}
+            for role, default_prompt in uh.PROPOSER_ROLE_DEFAULTS.items():
+                llm_personas[role] = st.text_area(
+                    f"{role} 프롬프트", value=default_prompt, height=80,
+                    disabled=not llm_on, key=f"persona_{role}")
+
         preview_clicked = st.form_submit_button("실험 문장 미리보기 / 검증")
 
     if preview_clicked:
@@ -129,7 +139,7 @@ def render_design_tab(is_running: bool):
             "max_cand": int(max_cand), "seed": int(seed),
             "discovery_on": bool(discovery_on), "memory_path": memory_path,
             "llm_on": bool(llm_on), "llm_model": llm_model,
-            "debate_rounds": int(debate_rounds),
+            "debate_rounds": int(debate_rounds), "llm_personas": llm_personas,
         }
 
     pending = st.session_state.get("pending_cfg")
