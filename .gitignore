@@ -16,6 +16,7 @@ env/
 results*.json
 memory*.json
 /tmp/
+local_runs/
 
 # Streamlit
 .streamlit/
