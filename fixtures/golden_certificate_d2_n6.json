@@ -1,0 +1,346 @@
+{
+ "schema": "mcmullen-om-certificate/v1",
+ "claim": {
+  "dimension": 2,
+  "rank": 3,
+  "n": 6,
+  "implied_upper_bound": 5,
+  "statement_katex": "\\nu_{\\mathrm{OM}}(2)\\le 5"
+ },
+ "reorientation_convention": {
+  "fixed_element": 0,
+  "bit_i_means_flip_element": "i+1",
+  "total": 32
+ },
+ "chirotope": {
+  "n": 6,
+  "r": 3,
+  "signs": {
+   "0,1,2": 1,
+   "0,1,3": 1,
+   "0,1,4": 1,
+   "0,1,5": 1,
+   "0,2,3": 1,
+   "0,2,4": 1,
+   "0,2,5": 1,
+   "0,3,4": 1,
+   "0,3,5": 1,
+   "0,4,5": 1,
+   "1,2,3": 1,
+   "1,2,4": 1,
+   "1,2,5": 1,
+   "1,3,4": 1,
+   "1,3,5": 1,
+   "1,4,5": 1,
+   "2,3,4": 1,
+   "2,3,5": 1,
+   "2,4,5": 1,
+   "3,4,5": -1
+  }
+ },
+ "obstructions": [
+  {
+   "flip_index": 0,
+   "circuit_support": [
+    0,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "flip_index": 1,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 2,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 3,
+   "circuit_support": [
+    0,
+    1,
+    3,
+    4
+   ]
+  },
+  {
+   "flip_index": 4,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 5,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 6,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 7,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 8,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 9,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 10,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 11,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 12,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 13,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 14,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    5
+   ]
+  },
+  {
+   "flip_index": 15,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 16,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    5
+   ]
+  },
+  {
+   "flip_index": 17,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 18,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 19,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    5
+   ]
+  },
+  {
+   "flip_index": 20,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 21,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 22,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 23,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 24,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 25,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 26,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 27,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    4
+   ]
+  },
+  {
+   "flip_index": 28,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 29,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "flip_index": 30,
+   "circuit_support": [
+    0,
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "flip_index": 31,
+   "circuit_support": [
+    0,
+    1,
+    2,
+    3
+   ]
+  }
+ ],
+ "provenance": {
+  "repository_commit": "golden-fixture-pinned",
+  "generator": "exhaustive-backtracking-first-witness",
+  "config": {
+   "n": 6,
+   "r": 3,
+   "order": "dfs-lex"
+  },
+  "seed": null,
+  "python_version": "3.11.15",
+  "created_at": "2026-07-13T00:00:00+0000"
+ },
+ "hashes": {
+  "canonical_certificate_sha256": "1dac7a27b172d70a55ff3fb26b8684216b3e54f7f8ddc7992c8fc7ec5f351059"
+ }
+}

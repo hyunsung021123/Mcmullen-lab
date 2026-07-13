@@ -40,10 +40,20 @@ store.py       provenance 저장(ResultsStore, ResultRecord, RoundRecord)
 manager.py     Manager Agent — memory 를 실행 간 지속, 연구 보고서 생성
 run.py         CLI 진입점 (--class, --research, --llm 등)
 dashboard.py   Streamlit UI
+ui_helpers.py  대시보드용 순수 로직(라벨/검증/요약 — streamlit 비의존)
+reorientation_cover.py  hypercube coverage 기반 exact witness 검증기(독립 이중 경로)
+certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
+certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
+benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크
 ```
 
 수정 전에 관련 모듈의 `if __name__ == "__main__":` 자체 테스트를 먼저 읽을 것 — 각 모듈에
 기대 동작이 실행 가능한 예제로 들어있다.
+
+coverage/certificate 파이프라인의 수학적 근거·trust label·후속 로드맵은
+`docs/AUTONOMOUS_VERIFICATION_PIPELINE.md` 참고. **`certificate_verify.py` 의 독립성
+(reorientation_cover/search/generator/theorist 등 import 금지)은 그 자체가 신뢰
+근거이므로, "중복 제거"를 이유로 coverage 로직과 합치는 리팩터링은 금지.**
 
 ## 테스트 / 검증 명령
 
