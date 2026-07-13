@@ -76,6 +76,19 @@ def list_classes() -> list[dict]:
             for c in CLASS_REGISTRY.values()]
 
 
+def has_generator(name: str) -> bool:
+    """이 클래스 이름으로 실제 후보를 생성할 수 있는지(UI가 실행 전에 확인하기 위한
+    read-only 조회). backend='custom' 인데 소켓에 생성기가 연결되지 않았으면 False —
+    이 경우 class_generator() 는 NotImplementedError 를 던진다. 판정/생성 로직 자체는
+    변경하지 않는다."""
+    if name not in CLASS_REGISTRY:
+        return False
+    oc = CLASS_REGISTRY[name]
+    if oc.backend != "custom":
+        return True
+    return name in _CLASS_GENERATORS
+
+
 def class_generator(name: str, n: int, r: int, *,
                     backend_override: Optional[str] = None, **kw) -> Iterator[Chirotope]:
     """클래스 이름으로 후보 생성기 반환. backend_override 는 generic 클래스에 적용."""
@@ -107,3 +120,13 @@ if __name__ == "__main__":
                                accept=None))
     print(f"\nrank2_uniform n=5 → {len(got)}개 생성, 모두 valid:",
           all(ch.is_valid() for ch in got))
+
+    # has_generator: custom 백엔드인데 생성기가 없는 소켓(lawrence)은 False,
+    # 그 외 내장 클래스는 전부 True 여야 한다 (UI 실행 전 차단용 read-only 조회).
+    assert has_generator("uniform") is True
+    assert has_generator("realizable_uniform") is True
+    assert has_generator("rank2_uniform") is True
+    assert has_generator("cyclic") is True
+    assert has_generator("lawrence") is False
+    assert has_generator("존재하지-않는-클래스") is False
+    print("has_generator core-contract assertions OK")
