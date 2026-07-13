@@ -32,49 +32,14 @@ st.set_page_config(page_title="McMullen-OM Lab", layout="wide")
 # 시스템이 임시 폴더를 정리해도 사라지지 않는다.
 LOCAL_RUNS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_runs")
 
-# ───────────────────────────── 조건(criteria) 표시 ─────────────────────────────
-# REGISTRY 이름은 절대 바꾸지 않는다 — 화면 라벨/도움말 문구만 여기서 정한다.
-TOGGLEABLE = {
-    "acyclic": {
-        "label": "Acyclic — 양의 회로가 없음",
-        "help": "criteria.py REGISTRY: acyclic. 점 배치로 실현할 때 '뒤집힘'이 없는 경우.",
-    },
-    "totally_cyclic": {
-        "label": "Totally cyclic — 양의 코회로가 없음 (acyclic 의 쌍대)",
-        "help": "criteria.py REGISTRY: totally_cyclic. acyclic 과는 다른 개념이며 convex "
-                "position 과도 무관하다(CLAUDE.md §3 참고).",
-    },
-    "convex_position": {
-        "label": "Convex position — 모든 회로의 Radon 분할이 균형",
-        "help": "criteria.py REGISTRY: convex_position. 모든 원소가 convex hull 의 꼭짓점.",
-    },
-    "reorientable_to_convex": {
-        "label": "재배향으로 convex position 이 가능한가",
-        "help": "criteria.py REGISTRY: reorientable_to_convex.",
-    },
-    "not_reorientable_to_convex": {
-        "label": "★ 어떤 재배향으로도 convex position 이 되지 않는가 (McMullen 상한 witness)",
-        "help": "criteria.py REGISTRY: not_reorientable_to_convex. 이 성질을 만족하는 후보를 "
-                "찾으면 upper bound 를 n−1 로 낮추는 witness 가 된다.",
-    },
-    "circuit_balance_at_least": {
-        "label": "회로 균형 ≥ k — 모든 Radon 분할의 작은 쪽이 k 이상",
-        "help": "criteria.py REGISTRY: circuit_balance_at_least(k). convex_position 은 이 "
-                "조건의 k=2 특수 경우에 해당한다.",
-    },
-    "min_symmetry_order": {
-        "label": "대칭(부호 보존 재배향) 수 ≥ k",
-        "help": "criteria.py REGISTRY: min_symmetry_order(k). 부호를 보존하는 재배향의 개수.",
-    },
-}
-PARAM_CRITERIA = {"circuit_balance_at_least", "min_symmetry_order"}
-MODES = ["off", "require", "forbid", "target"]
-MODE_LABELS = {
-    "off": "미사용",
-    "require": "require — 반드시 만족",
-    "forbid": "forbid — 만족하면 제외",
-    "target": "target — 성공(witness) 판정 조건",
-}
+# ───────────────────────────── 탐색 목표(고정) ─────────────────────────────
+# 이 도구는 항상 McMullen 상한 witness(어떤 재배향으로도 convex position이 되지 않는
+# OM) 하나만 찾는다. acyclic/totally_cyclic 등 다른 조건을 화면에서 토글하게 두는 건
+# 실효성이 없었다 — acyclic(M) ⟹ ¬totally_cyclic(M)이 항상 성립해 totally_cyclic은
+# 중복이고, witness 판정(재배향 궤도 전체 탐색)은 애초에 시작 후보가 acyclic일 필요도
+# 없다(docs/DECISIONS.md 0010). REGISTRY의 다른 조건들(circuit_balance_at_least 등)도
+# 지금은 UI에서 뺐다 — 필요해지면 CLI(config.yaml)에서는 여전히 쓸 수 있다.
+FIXED_CRITERIA = [{"name": "not_reorientable_to_convex", "mode": "target"}]
 
 
 # ───────────────────────────── 세션 상태 ─────────────────────────────
@@ -85,24 +50,13 @@ st.session_state.setdefault("pending_cfg", None)
 st.session_state.setdefault("uploaded_data", None)
 
 
-def _collect_criteria_from_widgets() -> list[dict]:
-    items = []
-    for name, info in TOGGLEABLE.items():
-        mode = st.session_state.get(f"m_{name}", "off")
-        if mode == "off":
-            continue
-        args = [int(st.session_state[f"k_{name}"])] if name in PARAM_CRITERIA else []
-        items.append({"name": name, "mode": mode, "args": args})
-    return items
-
-
 def _build_search_config(pending: dict) -> SearchConfig:
     return SearchConfig(
         d=int(pending["d"]), om_class=pending["om_class"],
         n_min=int(pending["n_min"]), n_max=int(pending["n_max"]),
         rounds=int(pending["rounds"]),
         backend=None if pending["backend"] == "(자동)" else pending["backend"],
-        dedup=bool(pending["dedup"]), criteria=pending["criteria"],
+        dedup=bool(pending["dedup"]), criteria=FIXED_CRITERIA,
         max_candidates_per_round=int(pending["max_cand"]),
         seed=None if int(pending["seed"]) == 0 else int(pending["seed"]),
         discovery_enabled=bool(pending["discovery_on"]),
@@ -144,19 +98,10 @@ def render_design_tab(is_running: bool):
         n_max = c4.number_input("n_max", 3, 40, 6)
         rounds = c5.number_input("반복 횟수", 1, 100, 1)
 
-        st.subheader("조건")
-        st.caption("valid(Grassmann–Plücker 공리를 만족하는 적법한 uniform OM)는 항상 "
-                   "자동으로 적용됩니다. acyclic/totally_cyclic은 witness 판정에는 "
-                   "불필요함이 확인되어(docs/DECISIONS.md 0010) 기본값이 '미사용'입니다 — "
-                   "필요하면 여전히 켤 수 있습니다.")
-        for name, info_c in TOGGLEABLE.items():
-            cols = st.columns([3, 2] if name in PARAM_CRITERIA else [1])
-            default = "target" if name == "not_reorientable_to_convex" else "off"
-            cols[0].selectbox(info_c["label"], MODES, index=MODES.index(default),
-                              format_func=lambda m: MODE_LABELS[m],
-                              help=info_c["help"], key=f"m_{name}")
-            if name in PARAM_CRITERIA:
-                cols[1].number_input("k", 1, 10, 2, key=f"k_{name}")
+        st.caption("찾는 조건은 고정되어 있습니다: **valid**(적법한 uniform OM) 이면서 "
+                   "**어떤 재배향으로도 convex position이 되지 않는 OM**(McMullen 상한 "
+                   "witness). 다른 조건(acyclic 등)은 판정에 불필요함이 확인되어 "
+                   "제거했습니다(docs/DECISIONS.md 0010).")
 
         st.subheader("연구 루프")
         discovery_on = st.checkbox("Discovery Engine (검증된 표본에서 패턴 자동 탐지)",
@@ -179,7 +124,7 @@ def render_design_tab(is_running: bool):
     if preview_clicked:
         st.session_state.pending_cfg = {
             "d": int(d), "om_class": om_class, "n_min": int(n_min), "n_max": int(n_max),
-            "rounds": int(rounds), "criteria": _collect_criteria_from_widgets(),
+            "rounds": int(rounds),
             "backend": backend_override, "dedup": bool(dedup),
             "max_cand": int(max_cand), "seed": int(seed),
             "discovery_on": bool(discovery_on), "memory_path": memory_path,
@@ -193,14 +138,14 @@ def render_design_tab(is_running: bool):
 
     st.divider()
     r = CLASS_REGISTRY[pending["om_class"]].resolve_rank(pending["d"])
-    summary = uh.criteria_summary_from_items(pending["criteria"])
+    summary = uh.criteria_summary_from_items(FIXED_CRITERIA)
     sentence = uh.experiment_sentence(pending["d"], r, pending["om_class"],
                                       pending["n_min"], pending["n_max"], summary)
     st.markdown(f"**실험 문장**\n\n> {sentence}")
 
     errors = uh.validate_experiment(d=pending["d"], r=r, om_class=pending["om_class"],
                                     n_min=pending["n_min"], n_max=pending["n_max"],
-                                    criteria_items=pending["criteria"])
+                                    criteria_items=FIXED_CRITERIA)
     backend_eff = pending["backend"] if pending["backend"] != "(자동)" else \
         CLASS_REGISTRY[pending["om_class"]].backend
     warnings = uh.feasibility_warnings(d_eff=r - 1, backend_effective=backend_eff,
@@ -249,7 +194,7 @@ def render_status_tab():
     snap_cfg = st.session_state.get("running_cfg_snapshot")
     if snap_cfg:
         r = CLASS_REGISTRY[snap_cfg["om_class"]].resolve_rank(snap_cfg["d"])
-        summary = uh.criteria_summary_from_items(snap_cfg["criteria"])
+        summary = uh.criteria_summary_from_items(FIXED_CRITERIA)
         sentence = uh.experiment_sentence(snap_cfg["d"], r, snap_cfg["om_class"],
                                           snap_cfg["n_min"], snap_cfg["n_max"], summary)
         st.info("현재 실행은 아래 설정으로 고정되어 있습니다. 화면에서 수정한 값은 "
