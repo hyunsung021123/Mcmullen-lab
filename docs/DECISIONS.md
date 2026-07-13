@@ -368,3 +368,56 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
     변경(REGISTRY에서 제거하는 게 아니라 기본 선택만 변경 — 사용자가 여전히 켤 수 있음).
   - `om_core.py`/`criteria.py`/`generator.py`의 판정·생성 로직 자체는 무변경.
 - 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
+
+## 0011 — local-autopull.ps1 이 자기 로그 파일 때문에 영구히 skip 되던 버그 수정
+
+- 날짜: 2026-07-13
+- 제안자: human(Windows 로그 이상 신고) → claude-code(원인 특정·수정)
+- 증상: 사용자가 실행 전용 폴더의 `autopull.log`에서 `skip: 커밋되지 않은 변경이 있어
+  건너뜀`만 반복되고 있음을 신고. `.bat`으로 대시보드를 실행해도 항상 예전 버전이 뜸.
+- 원인: `local-autopull.ps1`의 기본 `LogPath`는 `RepoPath\autopull.log`, 즉 클론 폴더
+  루트에 로그를 남긴다. 그런데 `.gitignore`에 `autopull.log`가 없어서, 스크립트가
+  최초 1회라도 실행되고 나면 그 로그 파일 자신이 즉시 untracked 파일로 잡히고,
+  `git status --porcelain`이 영원히 비어있지 않게 된다. 스크립트의 안전장치("커밋되지
+  않은 변경이 있으면 아무 것도 안 함")가 자기 자신의 로그 파일 때문에 항상 발동해
+  `git pull`이 단 한 번도 실제로 실행되지 않는 상태였다(자기 자신을 dirty 원인으로
+  오인).
+- 결정: `.gitignore`에 `autopull.log` 추가. 스크립트(`local-autopull.ps1`) 자체는
+  무변경 — 문제는 로직이 아니라 이 파일 하나가 커밋 추적 대상에서 빠져있지 않았던
+  것뿐이었다.
+- 검토한 대안과 기각 사유:
+  - 스크립트에서 `git status --porcelain -- . ':!autopull.log'`처럼 로그 파일을
+    명시적으로 제외 → 기각. `.gitignore`에 추가하는 쪽이 더 근본적이고(다른 도구가
+    같은 파일을 봐도 일관되게 무시됨), 스크립트 로직을 건드릴 필요가 없음.
+  - `LogPath` 기본값을 리포 바깥(예: `%TEMP%`)으로 변경 → 기각. 사용자가 로그를
+    리포 폴더 안에서 바로 확인하길 원할 수 있고, 이미 배포된 두 Task Scheduler
+    항목(코드 수정용/실행 전용)의 커맨드라인을 다시 등록해야 하는 번거로움 발생.
+- 영향 범위: `.gitignore` 한 줄 추가. 판정/검색 로직 무관.
+- 사용자 안내: 이 수정이 `develop`에 병합된 뒤에도, 이미 로컬에 쌓여있는
+  `autopull.log`는 여전히 untracked 상태로 git status에 잡힐 수 있다(파일이 아직
+  `.gitignore`에 없던 시점에 생성됐어도, `.gitignore`는 앞으로의 untracked 판정에는
+  즉시 적용된다 — 이미 tracked 상태가 아니므로 `git rm --cached` 등 별도 조치 불필요).
+  다만 이 수정 자체가 최신 `develop`에 반영되기 전까지는 동일한 지역 스크립트가 계속
+  로그를 남기며 pull을 막고 있으므로, 급하면 로컬에서 `autopull.log`를 수동으로
+  지우거나 `git pull`을 한 번 직접 실행해 최신 상태로 맞춰야 한다.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
+
+## 0012 — McMullen 문제의 dimension/rank 표현 정리 (affine circuit OM: rank = dimension + 1)
+
+- 날짜: 2026-07-13
+- 제안자: human(직접 정정) — 이전 세션에서 논의 없이 열려 있던 "2d-1 vs 2d+1" 불일치
+  질문에 대한 답.
+- 정리: 이 프로젝트가 다루는 McMullen/Larman 추측은 기본적으로 **affine circuit OM**을
+  취하므로 `rank = dimension + 1`이 항상 성립한다. 따라서 같은 명제를 dimension(`d`)
+  기준으로 쓰면 목표 상한이 `2d+1`, rank(`r = d+1`) 기준으로 쓰면 `2r-1`이며 둘은
+  같은 명제의 서로 다른 표현일 뿐 모순이 아니다. 코드 전반(`om_core.py`,
+  `search.py`, `config.example.yaml`, `README.md`)은 지금까지 dimension 기준
+  표현(`target_bound = 2d+1`)을 일관되게 써왔고, 그대로 유지하기로 함.
+- 향후 방향(즉시 실행 아님, 열어둠): 앞으로 다양한 OM class(REOM/Lawrence 등 rank가
+  1차 개념이고 "dimension"이 자연스럽지 않은 경우도 포함)를 다룰 예정이므로, 임의의
+  OM class에 표준적으로 적용 가능한 **rank 기준** 표현으로 전체 코드/문서를 통일하는
+  것을 고려할 수 있다. 이건 별도 이슈로 스코프를 잡을 문제(용어 전수 치환 + 테스트
+  갱신)이며, 이번 결정에서는 착수하지 않는다.
+- 영향 범위: 이번 결정 자체는 코드 변경 없음(문서화만). `target_bound`/`solves_conjecture`
+  등 기존 dimension 기준 공식은 무변경.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
