@@ -197,8 +197,15 @@ def vet_biases(biases: list, d: int, r: int, *, memory=None,
 def run_debate(d: int, r: int, *, verified_facts: list, findings: list,
                memory=None, known_witnesses: list | None = None,
                model: str = "qwen2.5", rounds: int = 2,
+               personas: dict[str, str] | None = None,
                llm_fn: Callable[[str, str, str], str] = ollama_chat) -> dict:
-    """제안자 LLM 들이 여러 라운드로 제안·수정하고, 결정론적 적대자가 매 라운드 반박."""
+    """제안자 LLM 들이 여러 라운드로 제안·수정하고, 결정론적 적대자가 매 라운드 반박.
+
+    personas: role -> 커스텀 system prompt. 지정 안 한 role 은 PROPOSER_ROLES 기본값을
+    쓴다. 이건 제안자(LLM)에게 주는 프롬프트만 바꾸는 것이지, 결정론적 적대자
+    (proof_checker/counterexample_hunter)는 이 인자와 무관하게 항상 그대로 동작한다 —
+    LLM이 무슨 프롬프트로 무엇을 제안하든 채택 여부는 여전히 코드가 정한다."""
+    effective_roles = {**PROPOSER_ROLES, **(personas or {})}
     mem_lines = memory.summary_for_committee() if memory else []
     find_lines = [f"{f['invariant']}={f['value']} ({f['kind']}, {f['support']})"
                   for f in findings]
@@ -217,7 +224,7 @@ def run_debate(d: int, r: int, *, verified_facts: list, findings: list,
         ctx += "\n" + PROPOSAL_SCHEMA
 
         proposals: list[Proposal] = []
-        for role, persona in PROPOSER_ROLES.items():
+        for role, persona in effective_roles.items():
             try:
                 out = parse_json(llm_fn(model, persona, ctx))
                 p = Proposal(role=role, conjecture=out.get("conjecture", ""),
@@ -303,3 +310,25 @@ if __name__ == "__main__":
     assert res["criteria_add"] == [{"name": "acyclic", "mode": "require", "args": []}]
     assert res["next_n_override"] == 8
     print("core-contract assertions OK (결정론적 적대자 판정 고정)")
+
+    # personas override: 지정한 role 은 커스텀 프롬프트를, 나머지는 기본값을 받는지,
+    # 그리고 프롬프트가 바뀌어도 결정론적 게이트 판정 자체는 그대로인지 확인.
+    custom_geometer_prompt = "당신은 이 세션에서만 쓰는 커스텀 지오미터 프롬프트다."
+    seen_system_prompts = {}
+
+    def mock_llm_personas(model, system, user):
+        seen_system_prompts.setdefault(system, []).append(True)
+        if system == custom_geometer_prompt:
+            return json.dumps(canned["geometer"])
+        role = next(k for k, v in PROPOSER_ROLES.items() if v == system)
+        return json.dumps(canned[role])
+
+    res2 = run_debate(3, 4, verified_facts=["n=8 witness 존재"], findings=[],
+                      known_witnesses=[wit], rounds=1,
+                      personas={"geometer": custom_geometer_prompt},
+                      llm_fn=mock_llm_personas)
+    assert custom_geometer_prompt in seen_system_prompts          # 오버라이드된 role
+    assert PROPOSER_ROLES["combinatorialist"] in seen_system_prompts  # 나머지는 기본값
+    status_by_role2 = {p["role"]: p["status"] for p in res2["transcript"][0]["proposals"]}
+    assert status_by_role2["geometer"] == "survived"    # 프롬프트만 바뀌었을 뿐 판정은 동일
+    print("personas override 자체 테스트 OK (기본 프롬프트 폴백 + 게이트 판정 불변)")

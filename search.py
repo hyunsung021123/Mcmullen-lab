@@ -50,6 +50,7 @@ class SearchConfig:
     llm_enabled: bool = False
     llm_model: str = "qwen2.5"
     debate_rounds: int = 2
+    llm_personas: dict[str, str] = field(default_factory=dict)  # role -> 커스텀 system prompt
 
     def resolve(self):
         if self.om_class not in CLASS_REGISTRY:
@@ -231,7 +232,8 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
                     ([f"탈락 사유 {failures}"] if failures else [])
             res = llm_debate(d_eff, r, verified_facts=facts, findings=finding_dicts,
                              memory=memory, known_witnesses=witnesses_ch,
-                             model=cfg.llm_model, rounds=cfg.debate_rounds)
+                             model=cfg.llm_model, rounds=cfg.debate_rounds,
+                             personas=cfg.llm_personas or None)
             debate_transcript = res["transcript"]
             current_criteria += res["criteria_add"]
             promoted_biases.extend(res["promoted"])
