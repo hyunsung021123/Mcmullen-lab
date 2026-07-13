@@ -294,13 +294,20 @@ Claude Code(클라우드)는 사람의 로컬 PC에 **접근할 방법이 전혀
 `streamlit run dashboard.py`를 매번 터미널에서 직접 입력하지 않아도 되도록,
 `scripts/run_dashboard.bat`를 제공한다.
 
-- 이 스크립트가 하는 일은 저장소 루트로 이동해 `streamlit run dashboard.py`를 실행하는
-  것뿐이다 — Streamlit은 기본적으로(headless가 아니면) 실행 시 기본 브라우저를 자동으로
-  띄운다.
+- 이 스크립트가 하는 일은 저장소 루트로 이동해 `python -m streamlit run dashboard.py`를
+  실행하는 것뿐이다 — Streamlit은 기본적으로(headless가 아니면) 실행 시 기본 브라우저를
+  자동으로 띄운다. bare `streamlit` 대신 `python -m streamlit`을 쓰는 이유(0007과 같은
+  종류의 실측 문제): pip이 설치한 `streamlit.exe`가 있는 Scripts 폴더가 PATH에 없는
+  환경에서도, `python` 자체만 PATH에 있으면 동작한다.
 - **바탕화면에 바로가기 만드는 법(Windows)**: `scripts\run_dashboard.bat` 파일을 우클릭
   → "바로 가기 만들기" → 만들어진 바로가기를 바탕화면으로 옮기기. 이후 그 바로가기를
   더블클릭하면 대시보드가 브라우저에 뜬다.
-- 사전 준비: 저장소 폴더에서 `pip install -e .[ui]`(또는 `pip install streamlit pandas`)를
-  한 번 실행해 Streamlit이 설치돼 있어야 한다.
+- 사전 준비: 저장소 폴더에서 `pip install -e .[ui]`(또는
+  `python -m pip install streamlit pandas`)를 한 번 실행해 Streamlit이 설치돼 있어야
+  한다.
+- 이 `.bat` 파일은 UTF-8(BOM 없음)로 저장돼 있고 첫 줄에 `chcp 65001`로 콘솔
+  코드페이지를 UTF-8로 전환한다 — `.bat` 파일에 BOM을 넣으면 cmd.exe가 첫 줄을 명령으로
+  잘못 파싱해 오류가 나므로, `local-autopull.ps1`(PowerShell, BOM 방식)과는 다른
+  방식으로 한글 깨짐을 해결했다(Issue #27, 실측 확인).
 - 이 스크립트는 사람의 로컬 실행 편의만 다루며, 저장소의 신뢰 모델·CI·병합 절차와는
   무관하다.
