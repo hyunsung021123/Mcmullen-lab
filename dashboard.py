@@ -14,7 +14,7 @@ dashboard.py — 로컬 UI (Streamlit). 연구 실험실 UI.
 실행:  streamlit run dashboard.py   (또는 scripts/run_dashboard.bat 더블클릭)
 """
 from __future__ import annotations
-import json, tempfile, os, time
+import json, os, time
 from collections import Counter
 import streamlit as st
 import pandas as pd
@@ -26,6 +26,11 @@ from store import ResultsStore
 import ui_helpers as uh
 
 st.set_page_config(page_title="McMullen-OM Lab", layout="wide")
+
+# 실행 결과 저장 위치 — 시스템 임시 폴더 대신 저장소 안의 전용 폴더를 쓴다. 이 폴더는
+# .gitignore(local_runs/)로 완전히 무시되므로 git pull/커밋과 무관하게 영구 보존되고,
+# 시스템이 임시 폴더를 정리해도 사라지지 않는다.
+LOCAL_RUNS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_runs")
 
 # ───────────────────────────── 조건(criteria) 표시 ─────────────────────────────
 # REGISTRY 이름은 절대 바꾸지 않는다 — 화면 라벨/도움말 문구만 여기서 정한다.
@@ -209,7 +214,8 @@ def render_design_tab(is_running: bool):
     if st.button("▶ 이 설정으로 탐색 실행", type="primary",
                 disabled=start_disabled, use_container_width=True):
         cfg = _build_search_config(pending)
-        out = os.path.join(tempfile.gettempdir(), f"mcmullen_{int(time.time())}.json")
+        os.makedirs(LOCAL_RUNS_DIR, exist_ok=True)
+        out = os.path.join(LOCAL_RUNS_DIR, f"results_{int(time.time())}.json")
         runner = SearchRunner(cfg, out_path=out)
         runner.start()
         st.session_state.runner = runner
