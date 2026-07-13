@@ -205,12 +205,17 @@ snap = runner.snapshot()   # snap.best_config, snap.best_upper_bound, snap.candi
 `config.yaml` 의 `criteria` 한 줄씩:
 ```yaml
 criteria:
-  - {name: acyclic, mode: require}
-  - {name: totally_cyclic, mode: forbid}
   - {name: not_reorientable_to_convex, mode: target}
   - {name: circuit_balance_at_least, mode: forbid, args: [2]}   # 예: convex 직전 구조 회피
 ```
 `mode` = `require`(만족해야 채택) / `forbid`(만족하면 탈락) / `target`(달성하면 witness).
+
+> `acyclic`/`totally_cyclic`은 기본 목록에 없습니다 — 둘 다 REGISTRY엔 남아있어 원하면
+> 켤 수 있지만, `not_reorientable_to_convex` 판정(재배향 궤도 전체를 훑는 판정이라
+> 시작 대표원소의 acyclic 여부와 무관하게 같은 결과를 냄)만으로 witness 탐색에
+> 충분함을 확인했고, `acyclic`을 켜면 `totally_cyclic`은 정리(`acyclic ⟹
+> ¬totally_cyclic`)에 의해 항상 자동으로 충족되는 중복 조건이 됩니다(`docs/DECISIONS.md`
+> 0010).
 
 **새 성질을 코드로 추가**하려면 `criteria.py` 에 한 줄:
 ```python
@@ -229,8 +234,8 @@ register("my_prop", lambda ch: <om_core 판별로 만든 bool>, "내 성질 설�
   "is_witness": true,
   "implied_upper_bound": 11, "target_bound": 11, "solves_conjecture": true,
   "reward": 2.0,
-  "criteria_satisfied": ["valid","acyclic","not_reorientable_to_convex"],
-  "criteria_failed": ["totally_cyclic"],
+  "criteria_satisfied": ["valid","not_reorientable_to_convex"],
+  "criteria_failed": [],
   "promoted_biases": [ ... ],          // 이 시점에 검증 통과해 적용된 LLM 편향
   "chirotope": { "n":12, "r":6, "signs": { ... } }
 }

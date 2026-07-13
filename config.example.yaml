@@ -53,10 +53,18 @@ llm_model: qwen2.5
 #   * 새 기준을 코드로 추가하려면 criteria.py 의 register("이름", 술어, "설명") 한 줄.
 # ============================================================================
 criteria:
-  - {name: acyclic, mode: require}
-  - {name: totally_cyclic, mode: forbid}        # convex 와 명확히 분리해 배제
   - {name: not_reorientable_to_convex, mode: target}   # 이게 곧 상한 witness
 
   # --- 집중 탐색 예시 (주석 해제해서 사용) ---
   # - {name: circuit_balance_at_least, mode: forbid, args: [2]}   # convex 직전 구조 회피
   # - {name: min_symmetry_order, mode: require, args: [2]}        # 대칭 풍부한 것만
+
+  # acyclic=require / totally_cyclic=forbid 는 기본에서 뺐다(0010, docs/DECISIONS.md).
+  # 이유(둘 다 REGISTRY엔 여전히 있어 원하면 켤 수 있음):
+  #   1. acyclic(M) ⟹ ¬totally_cyclic(M) 은 항상 성립하는 정리라, 이 둘을 같이 켜면
+  #      totally_cyclic=forbid 는 이미 acyclic=require 가 다 걸러낸 뒤라 아무것도
+  #      추가로 걸러내지 못하는 중복 조건이다(rank 2~4, n<=9 에서 실측 확인).
+  #   2. acyclic=require 자체도 witness 판정에는 불필요하다 —
+  #      not_reorientable_to_convex 판정(is_reorientable_to_convex)은 재배향 궤도
+  #      전체를 훑어 "이 궤도 안에 convex 가 되는 원소가 있는가"를 보는데, 이건
+  #      궤도 불변량이라 시작 대표원소가 acyclic 인지와 무관하게 결과가 같다.
