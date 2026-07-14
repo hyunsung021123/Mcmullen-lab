@@ -96,6 +96,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `certificate.py` | witness certificate v1 생성 + Markdown/KaTeX 보고서 + CLI | `om_core`, `reorientation_cover` |
 | `certificate_verify.py` | **독립** certificate 검증기 (coverage 로직 미공유) + CLI | 표준 라이브러리 + `om_core` **만** |
 | `benchmark_coverage.py` | WP0 baseline oracle/corpus/benchmark (B0 vs B1) | 위 모듈들 + `generator` |
+| `reorientation_sat.py` | WP2 고정-χ convex-reorientation SAT 검증기 (SAT model replay 강제, UNSAT=`VERIFIED_BY_SOLVER`) | `om_core` + z3(옵셔널) |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -169,7 +170,7 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 
 독립 트랙: #49 (dedup-before-accept), #50 (Discovery evidence provenance).
 
-## 11. WP2 (SAT) 개요 — 참고용, 구현 금지
+## 11. WP2 (SAT) — 구현됨 (#39, `reorientation_sat.py`)
 
 고정된 χ 에 대해 재배향 Bool 변수 \(z_1,\ldots,z_{n-1}\) 를 두고, 각 support \(S\) 의
 재배향 후 positive count \(N_S^+(z)\) 에 대해
@@ -177,8 +178,14 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 \[ \operatorname{Convex}(\chi^z) \iff \bigwedge_{S\in\binom E{r+1}}
    \big(2\le N_S^+(z)\le|S|-2\big). \]
 
-SAT → model 이 실제 convex reorientation (반드시 `om_core` 로 replay).
+SAT → model 이 실제 convex reorientation (반드시 `om_core` 로 replay — 함수 안에서 강제).
 UNSAT → candidate witness, certificate v1 통과 후에만 `CERTIFIED`.
+타임아웃/불능 → `UNKNOWN` (UNSAT 으로 승격 금지).
+
+실측(#39 PR): (5,3) 전수 192 + (6,3) 표본 200 차등 검증 mismatch 0, SAT replay 100%,
+UNSAT candidate certificate replay CERTIFIED. 작은 n 에서는 legacy 열거가 더 빠르며
+(witness 1건 기준 0.8ms vs 12ms), SAT 의 가치는 속도가 아니라 (a) UNSAT 의 증명적
+구조(WP3 CEGIS 의 cut 학습 기반), (b) 부분 제약과의 결합 가능성이다 — 정직 보고.
 
 ## 12. WP3 (CEGIS) 개요 — 참고용, 구현 금지
 

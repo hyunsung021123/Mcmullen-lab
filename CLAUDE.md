@@ -42,6 +42,7 @@ run.py         CLI 진입점 (--class, --research, --llm 등)
 dashboard.py   Streamlit UI
 ui_helpers.py  대시보드용 순수 로직(라벨/검증/요약 — streamlit 비의존)
 reorientation_cover.py  hypercube coverage 기반 exact witness 검증기(독립 이중 경로)
+reorientation_sat.py    고정 χ convex-reorientation SAT 검증기 (z3 옵셔널, WP2)
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
 benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크
