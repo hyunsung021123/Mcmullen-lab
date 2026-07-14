@@ -49,6 +49,16 @@ jobs:
       - name: Manager (research loop) self-test
         run: python manager.py
 
+
+      - name: Coverage verifier / certificate self-tests
+        run: |
+          python reorientation_cover.py
+          python certificate.py --self-test
+          python certificate_verify.py --self-test
+
+      - name: Coverage benchmark quick self-test (전량 정확성 검사 포함)
+        run: python benchmark_coverage.py
+
       - name: CLI smoke test
         run: |
           python run.py --list-classes

@@ -421,3 +421,49 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: 이번 결정 자체는 코드 변경 없음(문서화만). `target_bound`/`solves_conjecture`
   등 기존 dimension 기준 공식은 무변경.
 - 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상).
+
+## 0013 — 자율 반례 탐색 파이프라인을 exact coverage → certificate → CEGIS → process verification 순으로 단계 도입
+
+- 날짜: 2026-07-13
+- 제안자: chatgpt(설계) → human(전달·승인) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Epic #37 의 첫 단계(Task #38)로 다음을 도입한다 —
+  (1) Boolean hypercube coverage 동치에 기반한 exact witness verifier
+  (`reorientation_cover.py`), (2) 모든 재배향(2^(n-1)개)에 대한 obstruction 을 담는
+  witness certificate v1 (`certificate.py`), (3) coverage 로직을 공유하지 않는
+  독립 검증기 (`certificate_verify.py`), (4) baseline oracle/benchmark
+  (`benchmark_coverage.py`), (5) 전체 로드맵 문서
+  (`docs/AUTONOMOUS_VERIFICATION_PIPELINE.md`)와 후속 Issue(#39~#50).
+- 원칙 (이 순서로 후속 단계 게이트를 건다):
+  - **LLM 품질을 직접 신뢰하지 않는다.** LLM 제안이 저품질이어도 시스템 전체가
+    견디는 구조가 목표다. prompt/persona 추가만으로는 교차 도메인 전환이 아니다.
+  - **witness 목표를 생성기·검증 과정 안으로 옮기는 것이 핵심이다** (현재 Z3 백엔드는
+    GP-valid 를 목표와 무관하게 열거).
+  - **PRM 보다 deterministic process verification 이 선행한다.** learned PRM 은
+    진실 판정자가 아니라 hard gate 통과 step 의 실행 순서만 정하는 scheduler 다.
+  - **`om_core.py` 는 동결.** 새 verifier 는 독립 이중 경로이며 legacy 와 불일치하면
+    새 경로를 채택하지 않는다.
+  - **단계별 benchmark(정확성 100% + engineering threshold) 통과 후에만 다음 단계.**
+  - **hidden chain of thought 는 저장하지 않는다.** 형식화된 주장/짧은 rationale/
+    검증 의무/반례/증명서/첫 실패 위치만 저장.
+  - **certificate 는 독립 replay 가 필수다.** trust label
+    (CONJECTURAL<EMPIRICAL<VERIFIED<CERTIFIED<FORMALIZED) 상위 등급 사칭 금지.
+- 실측 (Task #38 PR 의 벤치마크):
+  - 정확성: exhaustive corpus(전수: (4,2)(4,3)(5,2)(5,3)(5,4)(6,3)(6,4)) + sampled
+    corpus 합계 14,439개 후보에서 legacy/new witness 판정 **mismatch 0**.
+    witness 10,285개(rank-2 특이 사례 포함), non-witness 반례 flip replay 4,154건
+    전부 convex 확인, certificate 독립 replay 16건 전부 CERTIFIED.
+  - 성능: witness 밀도가 높은 corpus 에서 B1 이 1.6~1.8배 빠르고, legacy 가
+    조기 종료하는 쉬운 non-witness 에서는 더 느리다. median speedup < 3x 이므로
+    go/no-go 기준에 따라 **search 기본 경로 교체는 하지 않고** optional verifier 로
+    유지한다 (통합은 별도 후속 Issue).
+- 검토한 대안과 기각 사유:
+  - 모든 기능(SAT/CEGIS/PRM/Lean)을 한 PR 에 구현 → 기각. 선행 게이트 없이 대형
+    변경을 섞으면 정확성 회귀의 원인 추적이 불가능해진다. 후속은 Issue 로만 남긴다.
+  - coverage 결과를 곧바로 search 파이프라인의 기본 판정으로 교체 → 기각(위 성능
+    go/no-go 미달 + 신뢰 축적 기간 필요).
+  - verifier 간 코드 공유(중복 제거) → 기각. `certificate_verify.py` 의 독립성이
+    바로 신뢰 근거다 — 중복이 의도된 설계다.
+- 영향 범위: 신규 모듈 4개 + fixtures/golden certificate + 문서. `om_core.py`/
+  `theorist.py`/`generator.py`/`search.py`/UI 무변경. CI 에 새 self-test 4단계 추가.
+- 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상 — 특히 §3 의
+  coverage 동치 논증과 certificate schema).
