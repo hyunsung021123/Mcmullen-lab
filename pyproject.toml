@@ -31,5 +31,5 @@ py-modules = [
     "search", "progress", "manager", "run", "ui_helpers",
     "reorientation_cover", "certificate", "certificate_verify",
     "benchmark_coverage", "reorientation_sat", "cegis_search",
-    "symmetry_reduction",
+    "symmetry_reduction", "research_ir",
 ]

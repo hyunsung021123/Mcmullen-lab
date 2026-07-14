@@ -567,3 +567,30 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: 신규 모듈 1개 + `cegis_search.py` 에 함수 1개 추가(기존 함수 무변경)
   + 문서/CI/pyproject. `om_core.py` 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0017 — WP5: typed ResearchStep IR 도입 (research_ir.py)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #42 에 따라 `research-step/v1` IR 을 도입한다. kind 10종(definition/
+  equivalence/necessary_condition/sufficient_condition/pruning_rule/generator_family/
+  encoding/performance_claim/certificate_transform/formalization)마다 필수 obligation
+  목록이 고정되며, obligation 없는 kind 는 스키마 차원에서 존재할 수 없다.
+- 신뢰 규율:
+  - 이 모듈은 어떤 주장도 참으로 판정하지 않는다 — 형식/타입/정규화만. obligation
+    실행은 WP6 Process Verifier(#43)의 몫.
+  - `rationale_summary` 는 500자 상한 — hidden chain of thought 저장을 스키마
+    차원에서 차단.
+  - 기존 3개 bias type(element_count/require_property/forbid_property)은
+    `from_legacy_bias`/`to_legacy_bias` 로 무손실 왕복 (원본을 scope.legacy 에 보존).
+    element_count → generator_family, require/forbid_property → necessary_condition
+    으로 사상. 기존 theorist 게이트는 교체하지 않는다.
+  - 사용자가 별도로 제기했던 require/forbid type 통합 리팩토링은 이 IR 로 흡수
+    (별도 진행 불필요 — 두 legacy type 이 같은 kind 의 다른 claim 으로 정규화됨).
+- 검토한 대안과 기각 사유:
+  - kind 를 자유 문자열로 허용(LLM 이 새 kind 창발) → 기각. obligation 없는 kind 가
+    생기는 즉시 "검증 의무 없는 주장"이 시스템에 들어온다 — CLAUDE.md §1 위반 경로.
+    새 kind 는 사람이 obligation 목록과 함께 코드로 추가한다.
+  - JSON Schema 라이브러리 도입 → 기각(표준 라이브러리 원칙, 검증 로직이 단순).
+- 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.

@@ -58,6 +58,7 @@ jobs:
           python reorientation_sat.py
           python cegis_search.py
           python symmetry_reduction.py
+          python research_ir.py
 
       - name: Coverage benchmark quick self-test (전량 정확성 검사 포함)
         run: python benchmark_coverage.py
