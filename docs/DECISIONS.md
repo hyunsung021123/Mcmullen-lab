@@ -834,3 +834,28 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: theorist.py 추가 전용, generator.py 백엔드 1개 추가, run.py/dashboard
   선택지 1개, 신규 모듈 1개. om_core.py 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0027 — 자율 ResearchStep IR 대시보드 연결 계층 + Windows certificate hash 정합 (#66)
+
+- 날짜: 2026-07-15
+- 제안자: human(요구사항) → codex(설계·구현)
+- 결정: 기존 Streamlit 대시보드에 별도 opt-in 탭을 추가하고, UI 비의존 연결 계층
+  `autonomous_ui.py`를 둔다. 이 계층은 Ollama endpoint/model/temperature, 공통·역할별
+  프롬프트, ResearchStep kind 실행 정책, 자율 라운드, CEGIS outer/inner 예산,
+  Evidence DB, 진행 현황, audit/backlog/certificate/witness structure 결과를 기존
+  `run_autonomous_research`에 전달·표시한다. 수학적 판정이나 Process Verifier를 UI에서
+  재구현하지 않는다.
+- `research_manager.run_autonomous_research`에는 기본 동작을 보존하는 선택 인자만 추가:
+  debate round, enabled kind, CEGIS 예산, 진행 reporter. enabled kind에서 제외된 positive
+  step은 기각·삭제하지 않고 backlog로 보낸다. ranker와 hard gate의 의미는 변하지 않는다.
+- 실행 제어 트레이드오프: 현재 CEGIS는 후보 단위 안전 중단 callback이 없으므로 UI가
+  스레드를 강제 종료하지 않는다. 대신 outer model 수와 inner SAT timeout을 사용자 예산으로
+  노출한다. 안전 중단은 CEGIS 자체 계약이 생길 때 별도 작업으로 다룬다.
+- Windows 실측 수정: certificate export가 문자열의 LF bytes를 hash한 뒤 text mode가
+  파일을 CRLF로 기록해 SHA256SUMS가 즉시 실패했다. 모든 번들 파일을 `newline=""`로
+  기록해 hash 대상 bytes와 실제 파일을 플랫폼 간 동일하게 만들었다. certificate 검증
+  의미나 trust label은 바뀌지 않는다.
+- 영향 범위: `dashboard.py`, 신규 `autonomous_ui.py`, `research_manager.py`의 추가 선택 인자,
+  `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
+  `theorist.py`의 결정론적 적대자 로직은 무변경.
+- 다른 참여자 리뷰 상태: pending.

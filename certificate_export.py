@@ -227,7 +227,9 @@ def export_bundle(cert: dict, out_dir: str) -> dict:
 
     def write(name: str, content: str):
         p = os.path.join(out_dir, name)
-        with open(p, "w", encoding="utf-8") as f:
+        # SHA256은 content의 UTF-8 bytes 기준이다. Windows의 text mode가 \n을
+        # \r\n으로 바꾸면 기록한 hash와 실제 파일이 달라지므로 개행 변환을 끈다.
+        with open(p, "w", encoding="utf-8", newline="") as f:
             f.write(content)
         files[name] = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -249,7 +251,7 @@ def export_bundle(cert: dict, out_dir: str) -> dict:
     write("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
 
     sums = "".join(f"{h}  {name}\n" for name, h in sorted(files.items()))
-    with open(os.path.join(out_dir, "SHA256SUMS"), "w", encoding="utf-8") as f:
+    with open(os.path.join(out_dir, "SHA256SUMS"), "w", encoding="utf-8", newline="") as f:
         f.write(sums)
     return manifest
 
