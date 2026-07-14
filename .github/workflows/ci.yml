@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package (core + config extra)
-        run: pip install -e ".[config]"
+        run: pip install -e ".[config,z3]"
 
       - name: Syntax / import check
         run: python -m py_compile *.py
@@ -55,6 +55,7 @@ jobs:
           python reorientation_cover.py
           python certificate.py --self-test
           python certificate_verify.py --self-test
+          python reorientation_sat.py
 
       - name: Coverage benchmark quick self-test (전량 정확성 검사 포함)
         run: python benchmark_coverage.py

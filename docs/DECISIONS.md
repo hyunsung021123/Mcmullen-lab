@@ -467,3 +467,36 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `theorist.py`/`generator.py`/`search.py`/UI 무변경. CI 에 새 self-test 4단계 추가.
 - 다른 참여자 리뷰 상태: pending(다음 ChatGPT 교차 리뷰 때 확인 대상 — 특히 §3 의
   coverage 동치 논증과 certificate schema).
+
+## 0014 — WP2: 고정-χ convex-reorientation SAT 검증기 도입 (reorientation_sat.py)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #39 의 수용 조건에 따라 `reorientation_sat.py` 를 도입한다. 고정된
+  chirotope χ 에 대해 재배향 Bool 변수 z_1..z_{n-1}(원소 0 고정)로
+  `Convex(χ^z) ⟺ ∧_S (2 ≤ N_S^+(z) ≤ |S|-2)` 를 z3 로 인코딩.
+- 신뢰 규율 (구현에 강제됨):
+  - SAT model 은 **함수 안에서 om_core replay 를 통과해야만 반환**된다 (실패 시 예외 —
+    solver 를 진실 판정자로 쓰지 않음).
+  - UNSAT 은 `VERIFIED_BY_SOLVER` 등급일 뿐이며, certificate v1 독립 replay 통과
+    후에만 `CERTIFIED`.
+  - solver 타임아웃/불능은 `UNKNOWN` 으로 구분하고 UNSAT 으로 승격하지 않는다
+    (status 매핑을 자체 테스트로 고정).
+  - z3 는 무거운 선택적 의존성 유지(try/except) — 미설치 시 자체 테스트 SKIP 안전 종료.
+    CI 는 `.[config,z3]` 설치로 실제 실행한다.
+- 실측 (수용 조건 대비):
+  - tiny exhaustive (5,3) 전수 192 + (6,3) 표본 200: legacy 와 100% 일치 (mismatch 0).
+  - SAT model replay 100% (함수 내 강제라 통과 없이는 반환 자체가 불가).
+  - UNSAT candidate certificate replay: 3건 CERTIFIED.
+  - 참고 성능(정직 보고): 작은 n 에서는 legacy 전수 열거가 더 빠르다 (witness 1건
+    0.8ms vs 12ms; (12,6) 쉬운 non-witness 에서 legacy 0.016s / coverage 0.15s /
+    SAT 0.99s). SAT 의 가치는 속도가 아니라 UNSAT 의 증명적 구조(WP3 CEGIS 의
+    cut 학습 기반)와 부분 제약 결합 가능성이다.
+- 검토한 대안과 기각 사유:
+  - z3.AtLeast/AtMost 카디널리티 내장 사용 → 기각(버전 간 API 편차, Sum/If 인코딩이
+    이식성 높고 이 규모에서 성능 차이 무의미).
+  - pseudo-Boolean(PbGe/PbLe) 인코딩 → 동일 이유로 보류. WP3 성능 벤치마크에서
+    재검토 가능.
+- 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject 배선. `om_core.py`/기존 모듈 무변경.
+  기존 모듈 어디에서도 아직 import 되지 않음 (독립 검증 경로).
+- 다른 참여자 리뷰 상태: pending.

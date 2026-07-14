@@ -30,5 +30,5 @@ py-modules = [
     "discovery", "memory", "theorist", "store",
     "search", "progress", "manager", "run", "ui_helpers",
     "reorientation_cover", "certificate", "certificate_verify",
-    "benchmark_coverage",
+    "benchmark_coverage", "reorientation_sat",
 ]
