@@ -500,3 +500,34 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject 배선. `om_core.py`/기존 모듈 무변경.
   기존 모듈 어디에서도 아직 import 되지 않음 (독립 검증 경로).
 - 다른 참여자 리뷰 상태: pending.
+
+## 0015 — WP3: GP outer solver + exact CEGIS 루프 도입 (cegis_search.py)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #40 에 따라 `cegis_search.py` 를 도입한다. `∃χ[GP(χ) ∧ ∀ρ ¬Convex(χ^ρ)]`
+  를 QBF 로 직접 풀지 않고, outer(GP z3 solver) 가 χ 를 제안하고 inner(WP2 SAT)가
+  convex 재배향 ρ 를 찾으면 "그 ρ 를 차단하는 일반 제약"
+  `∨_S [min(pos,neg) ≤ 1 under ρ]` 을 outer 에 학습시킨다 (모델 단위 블로킹이 아님).
+- 신뢰 규율 (구현에 강제됨):
+  - **learned cut replay**: cut 추가 직후 om_core 직접 계산으로 (a) 방금 반례가 된
+    χ 를 실제로 배제하는지, (b) 알려진 witness 를 배제하지 않는지 assert.
+  - outer 모델도 `chi.is_valid()`(om_core) 재검증 — 실패 시 그 모델만 블로킹.
+  - inner UNSAT → legacy(is_reorientable_to_convex) replay → certificate v1 독립
+    replay 통과 후에만 CERTIFIED 반환. inner UNKNOWN 은 비승격(모델 블로킹 후 계속).
+- 실측 (수용 조건 대비):
+  - naive Z3(모델 열거+사후 판정, 현 generate_z3 구조와 동일) 대비:
+    (5,3) 무-witness 증명 192 → 16 모델 (**12.0x**), (6,4) 1,920 → 15 모델
+    (**128x**, 시간 5.7s → 0.9s = 6.1x) — "2개 벤치마크에서 모델 10x 또는 시간 3x"
+    수용 조건 충족.
+  - witness recall: (4,2) 24/24 (전부 CERTIFIED), (6,3) 전수 열거 9,984/9,984
+    (WP0 product 전수 실측과 일치, 소요 53분 — 대규모 recall 은 수동 검증용). mismatch 0.
+  - (6,3) 첫 witness 는 outer 1 모델 만에 CERTIFIED.
+- 검토한 대안과 기각 사유:
+  - 거대 QBF (∃∀) 직접 인코딩 → 기각(설계 문서의 명시적 금지 — 디버깅 불가능한
+    단일 블랙박스가 되고, cut 단위의 독립 replay 가 불가능해짐).
+  - 반례 χ 모델 하나만 블로킹 → 기각(수용 조건이 명시적으로 "일반 제약 학습" 요구;
+    실측에서도 cut 학습이 12~128x 모델 감소의 원천).
+  - 열거 모드에서 witness 마다 solver 재생성 → 기각(O(k²)). 지속 solver 로 리팩터링.
+- 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject 배선. `om_core.py`/기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.

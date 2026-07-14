@@ -97,6 +97,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `certificate_verify.py` | **독립** certificate 검증기 (coverage 로직 미공유) + CLI | 표준 라이브러리 + `om_core` **만** |
 | `benchmark_coverage.py` | WP0 baseline oracle/corpus/benchmark (B0 vs B1) | 위 모듈들 + `generator` |
 | `reorientation_sat.py` | WP2 고정-χ convex-reorientation SAT 검증기 (SAT model replay 강제, UNSAT=`VERIFIED_BY_SOLVER`) | `om_core` + z3(옵셔널) |
+| `cegis_search.py` | WP3 GP outer solver + exact CEGIS (재배향 obstruction cut 학습, cut replay 강제) | `om_core`, `reorientation_sat` + z3(옵셔널) |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -187,7 +188,7 @@ UNSAT candidate certificate replay CERTIFIED. 작은 n 에서는 legacy 열거�
 (witness 1건 기준 0.8ms vs 12ms), SAT 의 가치는 속도가 아니라 (a) UNSAT 의 증명적
 구조(WP3 CEGIS 의 cut 학습 기반), (b) 부분 제약과의 결합 가능성이다 — 정직 보고.
 
-## 12. WP3 (CEGIS) 개요 — 참고용, 구현 금지
+## 12. WP3 (CEGIS) — 구현됨 (#40, `cegis_search.py`)
 
 \[ \exists\chi\ \big[\operatorname{GP}(\chi)\ \land\ \forall\rho\,
    \neg\operatorname{Convex}(\chi^\rho)\big] \]
@@ -199,6 +200,13 @@ outer(GP solver)가 χ 제안 → inner 가 convex 재배향 탐색 → SAT 이�
 
 을 추가(모델 하나 블로킹이 아니라 **재배향을 차단하는 일반 제약 학습**) →
 UNSAT 이면 legacy replay + certificate + 독립 검증.
+
+실측(#40 PR): (5,3) 무-witness 증명 naive 192 모델 vs CEGIS 16 모델(12.0x 감소),
+(6,4) naive 1,920 모델/5.7s vs CEGIS 15 모델/0.9s(128x 모델·6.1x 시간) — 수용 조건
+(2개 벤치마크에서 10x 모델 또는 3x 시간) 충족. recall: (4,2) 24/24, (6,3) 전수
+9,984/9,984 (WP0 product 전수 실측과 일치, 소요 53분 — CI 밖 수동 검증). learned cut 은 추가 직후 om_core 직접
+계산으로 replay 된다 — (a) 반례 χ 를 실제로 배제하는지, (b) 알려진 witness 를
+배제하지 않는지.
 
 ## 13. WP5/6 (ResearchStep IR + Process Verifier) 개요 — 참고용, 구현 금지
 
