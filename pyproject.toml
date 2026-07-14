@@ -28,7 +28,7 @@ mcmullen-lab = "run:main"
 py-modules = [
     "om_core", "om_classes", "criteria", "generator",
     "discovery", "memory", "theorist", "store",
-    "search", "progress", "manager", "run", "ui_helpers",
+    "search", "progress", "manager", "run", "ui_helpers", "autonomous_ui",
     "reorientation_cover", "certificate", "certificate_verify",
     "benchmark_coverage", "reorientation_sat", "cegis_search",
     "symmetry_reduction", "research_ir", "process_verifier", "evidence_db", "step_ranker", "translations", "certificate_export", "witness_analysis", "research_manager",

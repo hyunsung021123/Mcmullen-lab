@@ -23,6 +23,10 @@ from om_classes import CLASS_REGISTRY
 from search import SearchConfig
 from progress import SearchRunner
 from store import ResultsStore
+from evidence_db import EvidenceDB
+from research_ir import STEP_KINDS
+from autonomous_ui import (AutonomousRunConfig, AutonomousResearchRunner,
+                           audit_rows, validate_config as validate_autonomous_config)
 import ui_helpers as uh
 
 st.set_page_config(page_title="McMullen-OM Lab", layout="wide")
@@ -48,6 +52,8 @@ st.session_state.setdefault("out_path", None)
 st.session_state.setdefault("running_cfg_snapshot", None)
 st.session_state.setdefault("pending_cfg", None)
 st.session_state.setdefault("uploaded_data", None)
+st.session_state.setdefault("autonomous_runner", None)
+st.session_state.setdefault("autonomous_cfg_snapshot", None)
 
 
 def _build_search_config(pending: dict) -> SearchConfig:
@@ -416,6 +422,211 @@ def render_results_tab():
             st.write("· " + line)
 
 
+# ───────────────────────────── 탭 4: 자율 IR 연구 ─────────────────────────────
+def _local_path(path: str) -> str:
+    """상대 경로는 저장소 루트 기준으로 해석한다."""
+    path = path.strip()
+    return path if os.path.isabs(path) else os.path.join(os.path.dirname(__file__), path)
+
+
+def _json_default(value):
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    raise TypeError(f"JSON으로 직렬화할 수 없는 값: {type(value).__name__}")
+
+
+def render_autonomous_tab(other_run_active: bool):
+    runner: AutonomousResearchRunner | None = st.session_state.get("autonomous_runner")
+    auto_running = runner is not None and runner.is_alive()
+
+    st.subheader("자율 ResearchStep IR 연구")
+    st.caption("LLM은 ResearchStep을 제안만 합니다. Process Verifier의 결정론적 hard gate, "
+               "rule-based ranker, CEGIS, certificate 독립 replay가 채택 여부를 결정합니다. "
+               "기존 탐색 탭과 별개의 opt-in 경로입니다.")
+
+    with st.form("autonomous_research_form"):
+        c1, c2, c3 = st.columns(3)
+        d = int(c1.number_input("dimension d", 1, 10, 2, key="auto_d"))
+        r = d + 1
+        c2.metric("rank r (=d+1)", r)
+        rounds = int(c3.number_input("자율 연구 라운드", 1, 100, 2))
+
+        c4, c5 = st.columns(2)
+        debate_rounds = int(c4.number_input("라운드당 제안·반박 회수", 1, 6, 1))
+        max_witnesses = int(c5.number_input("최대 CERTIFIED witness", 1, 100, 1))
+
+        st.markdown("#### Ollama 및 프롬프트")
+        o1, o2 = st.columns(2)
+        ollama_url = o1.text_input("Ollama Chat API URL",
+                                    "http://localhost:11434/api/chat")
+        model = o2.text_input("Ollama 모델", "qwen2.5")
+        o3, o4 = st.columns(2)
+        temperature = float(o3.slider("제안 temperature", 0.0, 1.5, 0.7, 0.1))
+        ollama_timeout_s = int(o4.number_input("Ollama 요청 timeout(초)", 10, 3600, 300))
+        common_prompt = st.text_area(
+            "모든 제안자에게 적용할 공통 프롬프트",
+            "검증 가능한 주장만 제안하고, 근거는 500자 이내의 공개 가능한 요약으로 작성하라.",
+            height=100)
+        with st.expander("역할별 프롬프트", expanded=False):
+            personas = {}
+            for role, default_prompt in uh.PROPOSER_ROLE_DEFAULTS.items():
+                personas[role] = st.text_area(
+                    f"{role} 프롬프트", default_prompt, height=90,
+                    key=f"auto_persona_{role}")
+
+        st.markdown("#### ResearchStep 정책")
+        enabled_kinds = st.multiselect(
+            "이번 실행에서 실행을 허용할 kind (hard gate 통과 후에만 적용)",
+            options=list(STEP_KINDS), default=list(STEP_KINDS),
+            help="선택하지 않은 kind도 기각하지 않고 backlog에 보존합니다.")
+
+        st.markdown("#### CEGIS 예산 및 증거")
+        b1, b2 = st.columns(2)
+        max_outer = int(b1.number_input("CEGIS 최대 outer model", 1, 10_000_000,
+                                        100_000, step=1_000))
+        inner_timeout = int(b2.number_input(
+            "후보별 SAT timeout(ms, 0=제한 없음)", 0, 3_600_000, 0, step=100))
+        save_evidence = st.checkbox("Evidence DB(JSONL hash chain) 저장", value=True)
+        evidence_path = st.text_input("Evidence 파일 경로", "local_runs/evidence.jsonl",
+                                      disabled=not save_evidence)
+        a1, a2 = st.columns(2)
+        analyze_witnesses = a1.checkbox("witness 구조 분석", value=True)
+        export_certificates = a2.checkbox("certificate 독립 replay 번들 export", value=True)
+
+        start = st.form_submit_button(
+            "▶ 자율 IR 연구 실행", type="primary", use_container_width=True,
+            disabled=auto_running or other_run_active)
+
+    cfg = AutonomousRunConfig(
+        d=d, r=r, rounds=rounds, debate_rounds=debate_rounds,
+        max_witnesses=max_witnesses, enabled_kinds=tuple(enabled_kinds),
+        cegis_max_outer_models=max_outer,
+        cegis_inner_timeout_ms=(inner_timeout or None),
+        evidence_path=(_local_path(evidence_path) if save_evidence else None),
+        model=model, ollama_url=ollama_url, ollama_temperature=temperature,
+        ollama_timeout_s=ollama_timeout_s, common_prompt=common_prompt,
+        personas=personas, analyze_witnesses=analyze_witnesses,
+        export_certificates=export_certificates)
+    errors = validate_autonomous_config(cfg)
+    for error in errors:
+        st.error(error)
+    if other_run_active:
+        st.info("기존 탐색이 실행 중이라 자율 IR 연구를 동시에 시작할 수 없습니다.")
+    if auto_running:
+        st.info("자율 IR 연구가 실행 중입니다. 설정 변경은 다음 실행에 적용됩니다.")
+
+    if start and not errors:
+        run_dir = os.path.join(LOCAL_RUNS_DIR, f"autonomous_{int(time.time())}")
+        os.makedirs(run_dir, exist_ok=True)
+        cfg = AutonomousRunConfig(**{
+            **cfg.__dict__,
+            "artifact_dir": os.path.join(run_dir, "certificates")
+                            if export_certificates else None,
+        })
+        runner = AutonomousResearchRunner(cfg)
+        runner.start()
+        st.session_state.autonomous_runner = runner
+        st.session_state.autonomous_cfg_snapshot = cfg
+        st.rerun()
+
+    runner = st.session_state.get("autonomous_runner")
+    if runner is None:
+        return
+
+    st.divider()
+    snap = runner.snapshot()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("상태", uh.STATE_LABELS.get(snap.state, snap.state))
+    m2.metric("현재 round", "—" if snap.round < 0 else
+              f"{snap.round + 1} / {snap.rounds_total}")
+    m3.metric("CERTIFIED witness", snap.witnesses)
+    if snap.state == "error":
+        st.error(snap.message)
+    else:
+        st.info(snap.message or "실행 준비 중")
+    with st.expander("자율 실행 로그", expanded=runner.is_alive()):
+        st.code("\n".join(snap.log) or "(아직 로그 없음)")
+
+    if runner.is_alive():
+        st.caption("현재 CEGIS 호출은 후보 단위 안전 중단 API가 없어 이 화면에서 강제 중단하지 "
+                   "않습니다. 설정한 outer model/timeout 예산으로 실행을 제한합니다.")
+        time.sleep(0.7)
+        st.rerun()
+        return
+
+    report = runner.report
+    if not report:
+        return
+
+    st.markdown("#### 실행 결과")
+    st.write("**검증된 사실**")
+    for fact in report.get("facts", []):
+        st.success(fact)
+    if not report.get("facts"):
+        st.caption("이번 실행에서 새로 채택된 검증 사실이 없습니다.")
+
+    round_rows = []
+    for rd in report.get("rounds", []):
+        round_rows.append({"round": rd["round"], **rd["counts"],
+                           "실행": "; ".join(f"{sid}: {msg}"
+                                             for sid, msg in rd["executed"])})
+    if round_rows:
+        st.write("**라운드별 실행 현황**")
+        st.dataframe(pd.DataFrame(round_rows), use_container_width=True, hide_index=True)
+
+    st.write("**Process Verifier audit**")
+    audits = audit_rows(report)
+    if audits:
+        st.dataframe(pd.DataFrame(audits), use_container_width=True, hide_index=True)
+    else:
+        st.caption("audit 결과가 없습니다.")
+
+    st.write("**Backlog (반박이 아니라 실행기·정책 대기)**")
+    backlog_rows = [{"step id": step["id"], "kind": step["kind"],
+                     "주장": step["claim"]["dsl"],
+                     "상태": audit.get("status"),
+                     "첫 미통과": audit.get("first_failed_obligation")}
+                    for step, audit in report.get("backlog", [])]
+    if backlog_rows:
+        st.dataframe(pd.DataFrame(backlog_rows), use_container_width=True, hide_index=True)
+    else:
+        st.caption("backlog가 없습니다.")
+
+    if report.get("evidence_path"):
+        try:
+            count = EvidenceDB(report["evidence_path"]).verify_chain()
+            st.success(f"Evidence DB hash chain 검증 완료: {count}개 레코드 · "
+                       f"`{report['evidence_path']}`")
+        except Exception as exc:
+            st.error(f"Evidence DB 검증 실패: {exc}")
+
+    if report.get("certificates"):
+        st.write("**Certificate 및 독립 replay 번들**")
+        for idx, cert in enumerate(report["certificates"], start=1):
+            with st.expander(f"certificate {idx}"):
+                st.json(cert)
+                st.download_button(
+                    "certificate JSON 다운로드",
+                    json.dumps(cert, ensure_ascii=False, indent=2),
+                    file_name=f"certificate_{idx}.json", mime="application/json",
+                    key=f"auto_cert_{idx}")
+                bundles = report.get("certificate_bundles", [])
+                if idx <= len(bundles):
+                    st.caption("독립 replay.py 포함 번들: " + bundles[idx - 1]["directory"])
+
+    if report.get("witness_analysis"):
+        st.write("**Witness structure analysis**")
+        for idx, analysis in enumerate(report["witness_analysis"], start=1):
+            with st.expander(f"witness {idx}: n={analysis['n']}, r={analysis['r']}"):
+                st.metric("obstruction cover 크기", analysis["obstruction_cover_size"])
+                st.json(analysis)
+
+    st.download_button(
+        "자율 연구 report JSON 다운로드",
+        json.dumps(report, ensure_ascii=False, indent=2, default=_json_default),
+        file_name="autonomous_research_report.json", mime="application/json")
+
+
 # ───────────────────────────── 메인 ─────────────────────────────
 st.title("McMullen-OM Lab")
 st.caption("Oriented matroid 재구성으로 McMullen 문제(Larman 추측)의 상한을 탐색하는 "
@@ -423,13 +634,17 @@ st.caption("Oriented matroid 재구성으로 McMullen 문제(Larman 추측)의 �
 
 _runner = st.session_state.get("runner")
 _is_running = _runner is not None and _runner.is_alive()
+_auto_runner = st.session_state.get("autonomous_runner")
+_auto_running = _auto_runner is not None and _auto_runner.is_alive()
 
-tab_design, tab_status, tab_results = st.tabs(
-    ["🧪 실험 설계", "📡 실행 현황", "📊 결과와 가설"])
+tab_design, tab_status, tab_results, tab_autonomous = st.tabs(
+    ["🧪 실험 설계", "📡 실행 현황", "📊 결과와 가설", "🧭 자율 IR 연구"])
 
 with tab_design:
-    render_design_tab(_is_running)
+    render_design_tab(_is_running or _auto_running)
 with tab_status:
     render_status_tab()
 with tab_results:
     render_results_tab()
+with tab_autonomous:
+    render_autonomous_tab(_is_running)

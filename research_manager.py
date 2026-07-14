@@ -40,16 +40,26 @@ except ImportError:
 
 def run_autonomous_research(d: int, r: int | None = None, *,
                             rounds: int = 2,
+                            debate_rounds: int = 1,
                             max_witnesses: int = 1,
+                            enabled_kinds: set[str] | None = None,
+                            cegis_max_outer_models: int = 100_000,
+                            cegis_inner_timeout_ms: int | None = None,
                             evidence_path: Optional[str] = None,
                             model: str = "qwen2.5",
                             personas: dict | None = None,
                             llm_fn: Callable = ollama_chat,
+                            reporter: Callable[[dict], None] | None = None,
                             verbose: bool = True) -> dict:
     """opt-in 자율 연구 루프. 반환 report:
         {"witnesses": [Chirotope...], "certificates": [dict...],
          "backlog": [(step, audit)...],          # unverified — 재평가 대상
-         "facts": [str...], "rounds": [...], "evidence_path": str|None}"""
+         "audits": [{"round","category","step","audit"}...],
+         "facts": [str...], "rounds": [...], "evidence_path": str|None}
+
+    enabled_kinds 는 hard gate 를 바꾸지 않고, positive step 중 이번 실행에서 실행할
+    kind 만 고른다. 제외된 step 은 폐기하지 않고 backlog 로 보낸다. CEGIS 예산도
+    solver 호출에 그대로 전달할 뿐 판정 의미를 바꾸지 않는다."""
     r = r if r is not None else d + 1
     db = EvidenceDB(evidence_path) if evidence_path else None
 
@@ -59,6 +69,7 @@ def run_autonomous_research(d: int, r: int | None = None, *,
     facts: list[str] = []
     adopted_rules: list[str] = []
     round_reports: list[dict] = []
+    audit_records: list[dict] = []
 
     def log(msg):
         if verbose:
@@ -67,11 +78,22 @@ def run_autonomous_research(d: int, r: int | None = None, *,
     for rd in range(rounds):
         if len(witnesses) >= max_witnesses:
             break
+        if reporter:
+            reporter({"event": "round_started", "round": rd,
+                      "rounds_total": rounds, "witnesses": len(witnesses)})
         log(f"[round {rd}] 제안 요청 (사실 {len(facts)}개, 규칙 {len(adopted_rules)}개)")
         debate = run_debate_ir(
             d, r, verified_facts=facts + adopted_rules, findings=[],
             known_witnesses=witnesses, model=model, personas=personas,
-            llm_fn=llm_fn)
+            rounds=debate_rounds, llm_fn=llm_fn)
+
+        for category in ("positive", "unverified", "refuted"):
+            for step, audit in debate[category]:
+                audit_records.append({"round": rd, "category": category,
+                                      "step": step, "audit": audit})
+        for malformed in debate["malformed"]:
+            audit_records.append({"round": rd, "category": "malformed",
+                                  "malformed": malformed})
 
         # 기록 (trust 는 audit 에서 자동 도출 — 사칭 경로 없음)
         if db is not None:
@@ -81,7 +103,15 @@ def run_autonomous_research(d: int, r: int | None = None, *,
         backlog.extend(debate["unverified"])
 
         executed = []
-        for step, audit in rank(debate["positive"]):
+        eligible = []
+        for step, audit in debate["positive"]:
+            if enabled_kinds is not None and step["kind"] not in enabled_kinds:
+                backlog.append((step, audit))
+                executed.append((step["id"],
+                                 f"정책상 실행 보류(kind={step['kind']}) — backlog"))
+            else:
+                eligible.append((step, audit))
+        for step, audit in rank(eligible):
             kind = step["kind"]
             if kind == "generator_family" and len(witnesses) < max_witnesses:
                 if z3 is None:
@@ -94,7 +124,10 @@ def run_autonomous_research(d: int, r: int | None = None, *,
                     continue
                 from cegis_search import cegis_find_witness
                 t0 = time.perf_counter()
-                out = cegis_find_witness(n, r, known_witnesses=witnesses)
+                out = cegis_find_witness(
+                    n, r, known_witnesses=witnesses,
+                    max_outer_models=cegis_max_outer_models,
+                    inner_timeout_ms=cegis_inner_timeout_ms)
                 dt = time.perf_counter() - t0
                 executed.append((step["id"], f"cegis(n={n}) → {out.status} ({dt:.1f}s)"))
                 if out.status == "CERTIFIED_WITNESS":
@@ -125,10 +158,15 @@ def run_autonomous_research(d: int, r: int | None = None, *,
             "counts": {k: len(debate[k]) for k in
                        ("positive", "unverified", "refuted", "malformed")}})
         log(f"[round {rd}] 실행 {len(executed)}건, witness 누계 {len(witnesses)}")
+        if reporter:
+            reporter({"event": "round_completed", "round": rd,
+                      "rounds_total": rounds, "witnesses": len(witnesses),
+                      "counts": round_reports[-1]["counts"],
+                      "executed": list(executed)})
 
     return {"witnesses": witnesses, "certificates": certificates,
             "backlog": backlog, "facts": facts, "adopted_rules": adopted_rules,
-            "rounds": round_reports,
+            "rounds": round_reports, "audits": audit_records,
             "evidence_path": evidence_path}
 
 
@@ -164,8 +202,10 @@ if __name__ == "__main__":
 
     with tempfile.TemporaryDirectory() as tmp:
         ev_path = os.path.join(tmp, "evidence.jsonl")
+        progress_events = []
         report = run_autonomous_research(2, 3, rounds=1, max_witnesses=1,
                                          evidence_path=ev_path, llm_fn=mock_llm,
+                                         reporter=progress_events.append,
                                          verbose=True)
 
         # (1) 자율 루프가 CERTIFIED witness 를 실제로 만들었는가
@@ -184,6 +224,9 @@ if __name__ == "__main__":
         assert db.verify_chain() == len(recs) >= 5
         trusts = {rec["trust_status"] for rec in recs}
         assert "UNVERIFIED" in trusts and "CERTIFIED" in trusts
+        assert [e["event"] for e in progress_events] == [
+            "round_started", "round_completed"]
+        assert len(report["audits"]) == 5
         print(f"evidence {len(recs)}건 (trust: {sorted(trusts)})")
 
     print("research_manager core-contract assertions OK "
