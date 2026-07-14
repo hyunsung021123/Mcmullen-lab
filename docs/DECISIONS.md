@@ -594,3 +594,30 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   - JSON Schema 라이브러리 도입 → 기각(표준 라이브러리 원칙, 검증 로직이 단순).
 - 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0018 — WP6: 결정론적 Process Verifier 도입 (process_verifier.py) — fail-closed 원칙
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #43 에 따라 `process_verifier.py` 를 도입한다. ResearchStep 의
+  obligation 들을 순서대로 결정론적으로 실행하고, 첫 실패에서 즉시 기각하며
+  기계 판독 가능한 first-failure(+가능하면 반례 chirotope)를 반환한다.
+- 핵심 원칙 — **fail-closed**: 자동 실행기가 없는 obligation 은 '통과'가 아니라
+  '기각'이다. "검증할 수 없음"을 "검증됨"과 혼동하는 순간 CLAUDE.md §1 이 무너진다.
+  (예: equivalence 의 forward_implication 실행기는 아직 없으므로 equivalence step 은
+  현재 hard gate 를 넘을 수 없다 — 실행기가 구현될 때 열린다.)
+- legacy gate adapter: `theorist.proof_checker`(공허성·범위)와
+  `counterexample_hunter`(witness 보존)를 삭제하지 않고 obligation 실행기로
+  재사용한다 (CLAUDE.md §2 유지 — 판정은 전부 결정론적 코드, LLM 무관여).
+- 실행 가능 obligation (현재): schema_valid / type_valid /
+  known_witness_retention / small_instance_differential_test /
+  known_nonwitness_soundness / gp_validity_sample / exact_candidate_verification.
+  나머지는 fail-closed (해당 WP 에서 실행기 추가 시 개방).
+- 결정론을 자체 테스트로 고정 (동일 입력 → 동일 audit dict).
+- 검토한 대안과 기각 사유:
+  - 실행기 없는 obligation 을 "skip + 경고"로 통과 → 기각. 검증 의무의 의미가
+    사라지고, LLM 이 실행기 없는 kind 로 우회하는 경로가 생긴다.
+  - theorist 게이트 로직을 이 모듈로 이동(중복 제거) → 기각. 기존 theorist 경로의
+    동작을 바꾸지 않는 것이 WP6 의 명시적 제약 (adapter 로만 재사용).
+- 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.

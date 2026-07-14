@@ -59,6 +59,7 @@ jobs:
           python cegis_search.py
           python symmetry_reduction.py
           python research_ir.py
+          python process_verifier.py
 
       - name: Coverage benchmark quick self-test (전량 정확성 검사 포함)
         run: python benchmark_coverage.py
