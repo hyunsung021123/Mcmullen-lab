@@ -51,6 +51,7 @@ evidence_db.py          append-only 근거 저장소(JSONL + hash chain) (WP6b)
 step_ranker.py          rule-based 순위 — hard gate 통과분의 실행 순서만 결정 (WP7a)
 translations.py         cross-domain translation registry — exactness 권한 분리 (WP7c)
 witness_analysis.py     witness 구조 압축 — 최소 obstruction cover/UNSAT core/프로파일
+research_manager.py     opt-in 자율 연구 오케스트레이터 — IR제안→게이트→기록→CEGIS 실행
 certificate_export.py   certificate 번들 export — md/tex/lean/독립 replay.py (WP8)
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존

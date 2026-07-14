@@ -262,6 +262,93 @@ def run_debate(d: int, r: int, *, verified_facts: list, findings: list,
     return result
 
 
+
+# ───────────────────── ResearchStep 제안 경로 (0026 — 추가 전용) ─────────────────────
+IR_PROPOSAL_SCHEMA = """반드시 이 JSON 으로만 답하라(자유서술 금지):
+{
+ "kind": "definition|equivalence|necessary_condition|sufficient_condition|pruning_rule|generator_family|encoding|performance_claim|certificate_transform",
+ "claim_dsl": "검증 가능한 한 문장 (형식 언어 지향)",
+ "scope": {"rank": int, "n": int, ...},
+ "rationale_summary": "500자 이내 공개 가능한 근거",
+ "legacy_bias": {"type": "element_count|require_property|forbid_property", "spec": {...}}
+}
+legacy_bias 는 선택 — 제안이 기존 bias 로 표현 가능하면 함께 제공하라(정확한 실행기가
+이미 있는 경로라 검증 통과 확률이 높다)."""
+
+
+def run_debate_ir(d: int, r: int, *, verified_facts: list, findings: list,
+                  memory=None, known_witnesses: list | None = None,
+                  known_nonwitnesses: list | None = None,
+                  model: str = "qwen2.5", rounds: int = 1,
+                  personas: dict[str, str] | None = None,
+                  llm_fn: Callable[[str, str, str], str] = ollama_chat) -> dict:
+    """제안자 LLM 들이 ResearchStep(IR)을 제안하고, **결정론적 Process Verifier**
+    (process_verifier.verify_until_first_failure)가 게이트한다.
+
+    기존 run_debate 와의 관계: 이 함수는 추가 경로이며 기존 run_debate/proof_checker/
+    counterexample_hunter 의 동작을 바꾸지 않는다. 게이트는 여전히 100% 결정론적
+    코드다 (LLM 은 제안만). 반환:
+        {"positive": [(step, audit)...],      # hard gate 통과 — 실행 후보
+         "unverified": [(step, audit)...],    # 실행기 부재 — 연구 backlog
+         "refuted": [(step, audit)...],       # 반례/결정적 위반
+         "malformed": [{"role","error","raw"}...],  # 정규화 실패
+         "transcript": [...]}"""
+    from research_ir import new_step, from_legacy_bias, StepValidationError
+    from process_verifier import verify_until_first_failure
+
+    effective_roles = {**PROPOSER_ROLES, **(personas or {})}
+    mem_lines = memory.summary_for_committee() if memory else []
+    find_lines = [f"{f['invariant']}={f['value']} ({f['kind']}, {f['support']})"
+                  for f in findings]
+    base_ctx = (f"문제: d={d}, rank={r}. 목표는 '어떤 재배향으로도 convex 가 안 되는' "
+                f"uniform OM 을 최소 n 으로.\n"
+                f"검증된 사실: {verified_facts or '없음'}\n"
+                f"Discovery(검증 데이터 기반): {find_lines or '없음'}\n"
+                f"장기기억: {mem_lines or '없음'}\n")
+
+    positive, unverified, refuted, malformed = [], [], [], []
+    transcript = []
+    critiques: list = []
+    for rd in range(rounds):
+        ctx = base_ctx
+        if critiques:
+            ctx += ("\n지난 라운드 기각 사유(피해서 수정 제안):\n- "
+                    + "\n- ".join(critiques[-8:]) + "\n")
+        ctx += "\n" + IR_PROPOSAL_SCHEMA
+        round_log = []
+        for role, persona in effective_roles.items():
+            try:
+                out = parse_json(llm_fn(model, persona, ctx))
+                if out.get("legacy_bias"):
+                    step = from_legacy_bias(out["legacy_bias"],
+                                            rationale=out.get("rationale_summary",
+                                                              "legacy bias 제안"))
+                else:
+                    step = new_step(kind=out.get("kind", ""),
+                                    claim_dsl=out.get("claim_dsl", ""),
+                                    scope=out.get("scope", {}) or {},
+                                    rationale_summary=out.get("rationale_summary", ""))
+            except (StepValidationError, Exception) as e:
+                malformed.append({"role": role, "error": str(e)})
+                round_log.append({"role": role, "status": "malformed", "error": str(e)})
+                critiques.append(f"[{role}] 정규화 실패: {e}")
+                continue
+            audit = verify_until_first_failure(
+                step, known_witnesses=known_witnesses or [],
+                known_nonwitnesses=known_nonwitnesses or [], d=d, r=r, memory=memory)
+            bucket = {"positive": positive, "refuted": refuted,
+                      "unverified": unverified}[audit["status"]]
+            bucket.append((step, audit))
+            round_log.append({"role": role, "status": audit["status"],
+                              "step_id": step["id"], "kind": step["kind"],
+                              "first_failed": audit["first_failed_obligation"]})
+            if audit["status"] == "refuted":
+                critiques.append(f"[{role}] {audit['first_failed_obligation']}: "
+                                 f"{audit['detail'][:120]}")
+        transcript.append({"round": rd, "proposals": round_log})
+    return {"positive": positive, "unverified": unverified, "refuted": refuted,
+            "malformed": malformed, "transcript": transcript}
+
 if __name__ == "__main__":
     import random
     from om_core import mcmullen_evaluate
