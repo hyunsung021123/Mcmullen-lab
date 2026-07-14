@@ -28,9 +28,39 @@ import os
 import time
 from typing import Iterator, Optional
 
-VERIFIER_VERSION = "process-verifier/wp6"
-TRUST_LEVELS = ("CONJECTURAL", "EMPIRICAL", "VERIFIED", "VERIFIED_BY_SOLVER",
-                "CERTIFIED", "FORMALIZED", "REJECTED")
+VERIFIER_VERSION = "process-verifier/wp6.1"
+TRUST_LEVELS = ("CONJECTURAL", "EMPIRICAL", "UNVERIFIED", "REFUTED", "VERIFIED",
+                "VERIFIED_BY_SOLVER", "CERTIFIED", "FORMALIZED", "REJECTED")
+
+
+def derive_trust_status(audit: dict, *, solver_only: bool = False,
+                        certificate_verified: bool = False,
+                        kernel_accepted: bool = False) -> str:
+    """trust 등급을 호출자가 정하지 않고 **증거에서 도출**한다 (0023).
+
+        refuted audit                          → REFUTED
+        unverified audit (실행기 없음)          → UNVERIFIED
+        positive + kernel_accepted             → FORMALIZED
+        positive + certificate_verified        → CERTIFIED
+        positive + solver_only                 → VERIFIED_BY_SOLVER
+        positive (결정론적 audit 만)            → VERIFIED
+
+    상위 플래그(certificate/kernel)는 positive audit 없이는 아무 효과가 없다 —
+    negative 증거에 CERTIFIED 를 붙이는 경로 자체가 존재하지 않는다."""
+    status = audit.get("status")
+    if status == "refuted":
+        return "REFUTED"
+    if status == "unverified":
+        return "UNVERIFIED"
+    if status != "positive":
+        return "REJECTED"          # 알 수 없는 audit — 보수적으로
+    if kernel_accepted:
+        return "FORMALIZED"
+    if certificate_verified:
+        return "CERTIFIED"
+    if solver_only:
+        return "VERIFIED_BY_SOLVER"
+    return "VERIFIED"
 
 
 def _canonical(obj) -> bytes:
@@ -60,12 +90,21 @@ class EvidenceDB:
 
     # ── 기록 ──
     def append(self, *, step: dict, audit: dict,
-               trust_status: str = "REJECTED",
+               solver_only: bool = False,
+               certificate_verified: bool = False,
+               kernel_accepted: bool = False,
                config: dict | None = None,
                runtime_s: float | None = None,
                certificate_path: Optional[str] = None,
                artifact_hashes: dict | None = None) -> dict:
-        """검증 결과 한 건을 append. 기록된 레코드(chain_hash 포함)를 반환."""
+        """검증 결과 한 건을 append. 기록된 레코드(chain_hash 포함)를 반환.
+
+        trust_status 는 호출자가 지정할 수 없다 — audit 와 플래그에서
+        derive_trust_status 로 자동 도출된다 (등급 사칭 경로 차단, 0023)."""
+        trust_status = derive_trust_status(
+            audit, solver_only=solver_only,
+            certificate_verified=certificate_verified,
+            kernel_accepted=kernel_accepted)
         if trust_status not in TRUST_LEVELS:
             raise ValueError(f"알 수 없는 trust_status '{trust_status}'")
         prev = self._last_hash()
@@ -148,20 +187,24 @@ if __name__ == "__main__":
         step = from_legacy_bias({"type": "require_property", "spec": {"name": "acyclic"}})
         audit = verify_until_first_failure(step, d=2, r=3)
         rec1 = db.append(step=step, audit=audit,
-                         trust_status="VERIFIED" if audit["hard_gate_passed"] else "REJECTED",
                          config={"d": 2, "r": 3}, runtime_s=0.01)
+        assert rec1["trust_status"] == ("VERIFIED" if audit["hard_gate_passed"]
+                                        else audit["status"].upper())
         step2 = from_legacy_bias({"type": "require_property", "spec": {"name": "nonexistent"}})
         audit2 = verify_until_first_failure(step2, d=2, r=3)
-        rec2 = db.append(step=step2, audit=audit2, trust_status="REJECTED",
-                         config={"d": 2, "r": 3})
+        rec2 = db.append(step=step2, audit=audit2, config={"d": 2, "r": 3})
+        assert rec2["trust_status"] == "UNVERIFIED"      # 미등록 기준 = 실행기 부재
+        # 등급 사칭 경로 부재: negative audit 에 CERTIFIED 를 붙일 방법이 없다
+        fake = db.append(step=step2, audit=audit2, certificate_verified=True)
+        assert fake["trust_status"] == "UNVERIFIED"      # 플래그는 positive 없이는 무효
         recs = list(db.iter_records())
-        assert len(recs) == 2
+        assert len(recs) == 3
         assert recs[1]["audit"]["first_failed_obligation"] == "type_valid"
         assert recs[1]["prev_hash"] == rec1["chain_hash"]
-        print("append/조회/체인 연결 OK (2건)")
+        print("append/조회/체인 연결 OK (3건)")
 
         # (2) 무결성 검사 통과
-        assert db.verify_chain() == 2
+        assert db.verify_chain() == 3
         print("chain 무결성 OK")
 
         # (3) 개찬 탐지: 파일을 직접 조작하면 verify_chain 이 잡아야 한다
@@ -169,7 +212,8 @@ if __name__ == "__main__":
         tampered = json.loads(lines[0])
         tampered["trust_status"] = "CERTIFIED"           # 등급 사칭 시도
         with open(db.path, "w", encoding="utf-8") as f:
-            f.write(json.dumps(tampered, ensure_ascii=False) + "\n" + lines[1] + "\n")
+            f.write(json.dumps(tampered, ensure_ascii=False) + "\n"
+                    + "\n".join(lines[1:]) + "\n")
         try:
             db.verify_chain()
             raise AssertionError("개찬이 탐지되지 않음")
@@ -177,13 +221,15 @@ if __name__ == "__main__":
             assert "불일치" in str(e)
         print("개찬 탐지 OK (등급 사칭 → chain_hash 불일치)")
 
-        # (4) 수정/삭제 API 부재 (append-only 계약)
+        # (4) 수정/삭제 API 부재 (append-only 계약) + trust 자동 도출 어휘 확인
         assert not hasattr(db, "update") and not hasattr(db, "delete")
-        try:
-            db.append(step=step, audit=audit, trust_status="MIRACLE")
-            raise AssertionError("알 수 없는 trust_status 가 통과")
-        except ValueError:
-            pass
-        print("append-only 계약 + trust label 검증 OK")
+        from evidence_db import derive_trust_status as _d
+        assert _d({"status": "refuted"}) == "REFUTED"
+        assert _d({"status": "unverified"}) == "UNVERIFIED"
+        assert _d({"status": "positive"}) == "VERIFIED"
+        assert _d({"status": "positive"}, solver_only=True) == "VERIFIED_BY_SOLVER"
+        assert _d({"status": "positive"}, certificate_verified=True) == "CERTIFIED"
+        assert _d({"status": "refuted"}, certificate_verified=True) == "REFUTED"
+        print("append-only 계약 + trust 자동 도출 OK (사칭 경로 없음)")
 
     print("evidence_db core-contract assertions OK")

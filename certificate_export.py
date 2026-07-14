@@ -92,7 +92,25 @@ def main():
     raw = chd["signs"]
     if len(raw) != comb(n, r) or not all(v in (1, -1) for v in raw.values()):
         fail("signs", "개수 또는 값 부적법")
+    seen_keys = set()
+    for k in raw:
+        t = tuple(int(x) for x in k.split(","))
+        if len(t) != r or list(t) != sorted(set(t)) or t[0] < 0 or t[-1] >= n \
+                or t in seen_keys:
+            fail("sign_keys", f"부적법/중복 key: {k!r}")
+        seen_keys.add(t)
     signs = {tuple(int(x) for x in k.split(",")): v for k, v in raw.items()}
+    # Grassmann-Pluecker 3-term validity (uniform OM 이 아닌 부호표의 인증 방지 —
+    # 이 검사가 없으면 GP-invalid 부호표도 obstruction 만 맞으면 CERTIFIED 가 된다)
+    E = range(n)
+    for Y in combinations(E, r - 2):
+        rest = [e for e in E if e not in Y]
+        for a, b, c, d in combinations(rest, 4):
+            s1 = chi(signs, Y + (a, b)) * chi(signs, Y + (c, d))
+            s2 = chi(signs, Y + (a, c)) * chi(signs, Y + (b, d))
+            s3 = chi(signs, Y + (a, d)) * chi(signs, Y + (b, c))
+            if s1 == s3 and s2 == -s1:
+                fail("gp_validity", "Grassmann-Pluecker 공리 위반 (uniform OM 아님)")
     total = 1 << (n - 1)
     obstructions = cert["obstructions"]
     if cert["reorientation_convention"]["total"] != total \
@@ -197,9 +215,13 @@ def _render_lean(cert: dict) -> str:
 def export_bundle(cert: dict, out_dir: str) -> dict:
     """certificate 하나에서 번들 전체를 결정론적으로 생성. manifest 를 반환."""
     os.makedirs(out_dir, exist_ok=True)
-    # certificate 자체 무결성 먼저 (부적합 certificate 의 번들화 방지)
-    if certificate_hash(cert) != cert.get("hashes", {}).get("canonical_certificate_sha256"):
-        raise ValueError("certificate hash 불일치 — 번들 생성 거부")
+    # certificate 자체를 완전 검증 (hash 만이 아니라 GP/obstruction 전부 —
+    # 부적합 certificate 의 번들화 자체를 거부한다. 0023 참고)
+    from certificate_verify import verify_certificate, CertificateError
+    try:
+        verify_certificate(cert)
+    except CertificateError as e:
+        raise ValueError(f"certificate 검증 실패({e.obligation}) — 번들 생성 거부") from e
 
     files: dict[str, str] = {}
 
@@ -300,18 +322,78 @@ def _self_test() -> int:
             "reorientation_convention", "")     # 저장소 모듈 import 없음
         print("replay.py 저장소 비의존 재검증 OK (subprocess 격리, CERTIFIED)")
 
-        # (4) 조작된 certificate 로 만든 번들은 replay 가 비-0 으로 실패해야 한다
-        #     (implied_upper_bound 조작은 결정론적으로 실패 — hash 는 재계산해
-        #      번들 생성기의 hash 게이트는 통과시키고, 수학 검사에서 잡히는지 본다)
+        # (4) 조작된 certificate 는 이제 export_bundle 자체가 거부한다 (full verify 게이트).
+        #     replay.py 단독 방어도 별도로 확인: 번들 파일을 직접 조작해 넣었을 때
+        #     replay 가 비-0 으로 실패해야 한다.
+        def replay_standalone(c: dict):
+            d2 = os.path.join(tmp, f"standalone_{id(c)}")
+            os.makedirs(d2, exist_ok=True)
+            with open(os.path.join(d2, "certificate.json"), "w", encoding="utf-8") as f:
+                json.dump(c, f, ensure_ascii=False)
+            with open(os.path.join(d2, "replay.py"), "w", encoding="utf-8") as f:
+                f.write(REPLAY_TEMPLATE)
+            return subprocess.run([sys.executable, "replay.py"], cwd=d2,
+                                  capture_output=True, text=True, timeout=120)
+
         bad2 = copy.deepcopy(cert)
         bad2["claim"]["implied_upper_bound"] = 3
         bad2["hashes"]["canonical_certificate_sha256"] = certificate_hash(bad2)
-        out3 = os.path.join(tmp, "bundle_bad2")
-        export_bundle(bad2, out3)
-        r3 = subprocess.run([sys.executable, "replay.py"], cwd=out3,
-                            capture_output=True, text=True, timeout=120)
+        try:
+            export_bundle(bad2, os.path.join(tmp, "bundle_bad2"))
+            raise AssertionError("조작 certificate 가 번들화됨 (full verify 게이트 미동작)")
+        except ValueError:
+            pass
+        r3 = replay_standalone(bad2)
         assert r3.returncode != 0 and "FAIL" in r3.stdout, (r3.returncode, r3.stdout)
-        print("조작 certificate → replay 비-0 실패 OK (음성 케이스)")
+        print("조작 certificate → export 거부 + replay 단독 비-0 실패 OK")
+
+        # (4b) GP-invalid 부호표 공격 (0023): 임의 ±1 부호표는 uniform OM 이 아니어도
+        #      모든 재배향에 unbalanced circuit 을 가질 수 있다 — GP 검사 없는 replay 는
+        #      이를 CERTIFIED 로 오인했었다. 이제 export/replay 양쪽에서 차단돼야 한다.
+        import random as _rnd
+        from itertools import combinations as _c
+        from om_core import Chirotope as _Ch
+        rng = _rnd.Random(1)
+        subs6 = sorted(_c(range(6), 3))
+        gp_bad = None
+        for _ in range(20000):
+            sg = {s: rng.choice([1, -1]) for s in subs6}; sg[subs6[0]] = 1
+            ch6 = _Ch(6, 3, sg)
+            if ch6.is_valid():
+                continue
+            if all(any(min(sum(1 for v in ch6.reorient(
+                    {e for e in range(1, 6) if (k >> (e - 1)) & 1}).circuit(S).values()
+                    if v > 0), 4 - sum(1 for v in ch6.reorient(
+                    {e for e in range(1, 6) if (k >> (e - 1)) & 1}).circuit(S).values()
+                    if v > 0)) <= 1 for S in _c(range(6), 4)) for k in range(32)):
+                gp_bad = ch6
+                break
+        assert gp_bad is not None
+        obst = []
+        for k in range(32):
+            rch = gp_bad.reorient({e for e in range(1, 6) if (k >> (e - 1)) & 1})
+            for S in _c(range(6), 4):
+                C = rch.circuit(S); pos = sum(1 for v in C.values() if v > 0)
+                if min(pos, 4 - pos) <= 1:
+                    obst.append({"flip_index": k, "circuit_support": list(S)}); break
+        fake = {"schema": "mcmullen-om-certificate/v1",
+                "claim": {"dimension": 2, "rank": 3, "n": 6, "implied_upper_bound": 5,
+                          "statement_katex": "x"},
+                "reorientation_convention": {"fixed_element": 0,
+                                             "bit_i_means_flip_element": "i+1", "total": 32},
+                "chirotope": gp_bad.to_dict(), "obstructions": obst,
+                "provenance": {"repository_commit": "attack", "generator": "attack",
+                               "config": {}, "seed": None, "python_version": "3",
+                               "created_at": "2026-01-01"}}
+        fake["hashes"] = {"canonical_certificate_sha256": certificate_hash(fake)}
+        try:
+            export_bundle(fake, os.path.join(tmp, "bundle_gp_bad"))
+            raise AssertionError("GP-invalid certificate 가 번들화됨")
+        except ValueError as e:
+            assert "gp_validity" in str(e), e
+        r4 = replay_standalone(fake)
+        assert r4.returncode != 0 and "gp_validity" in r4.stdout, (r4.returncode, r4.stdout)
+        print("GP-invalid 부호표 공격 → export/replay 양쪽 차단 OK (0023 회귀 방지)")
 
         # (5) hash 불일치 certificate 는 번들 생성 자체가 거부돼야 한다
         bad3 = copy.deepcopy(cert)

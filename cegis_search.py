@@ -51,7 +51,10 @@ except ImportError:
 
 @dataclass(frozen=True)
 class CegisOutcome:
-    status: str                       # "CERTIFIED_WITNESS" | "EXHAUSTED" | "BUDGET_EXCEEDED"
+    # "CERTIFIED_WITNESS" | "EXHAUSTED"(unknown 0건일 때만 — 무-witness 증명)
+    # | "INCONCLUSIVE_WITH_UNKNOWN"(타임아웃 후보가 있어 완전성 주장 불가)
+    # | "BUDGET_EXCEEDED"
+    status: str
     chirotope: Optional[Chirotope]
     certificate: Optional[dict]
     stats: dict = field(default_factory=dict)
@@ -160,6 +163,11 @@ def cegis_find_witness(n: int, r: int, *,
         chi = outer.next_candidate()
         if chi is None:
             stats["wall_s"] = time.perf_counter() - t0
+            # UNKNOWN(타임아웃) 후보를 블로킹한 적이 있으면 "witness 없음"을 주장할 수
+            # 없다 — 그 후보가 실제 witness 였을 수 있다 (0023). EXHAUSTED 는
+            # inner_unknown == 0 일 때만.
+            if stats["inner_unknown"] > 0:
+                return CegisOutcome("INCONCLUSIVE_WITH_UNKNOWN", None, None, stats)
             return CegisOutcome("EXHAUSTED", None, None, stats)
         stats["outer_models"] += 1
 
@@ -225,9 +233,16 @@ def cegis_enumerate_witnesses(n: int, r: int, *,
     outer = GPOuterSolver(n, r)
     found: list[Chirotope] = []
     n_cuts = 0
+    n_unknown = 0
     while len(found) < max_witnesses:
         chi = outer.next_candidate()
         if chi is None:
+            # UNKNOWN 후보를 버린 적이 있으면 열거가 완전하다고 주장할 수 없다 —
+            # 종료 전에 INCONCLUSIVE 신호를 방출한다 (recall 주장하는 소비자는
+            # 이 신호를 반드시 확인해야 함).
+            if n_unknown > 0:
+                yield CegisOutcome("INCONCLUSIVE_WITH_UNKNOWN", None, None,
+                                   {"inner_unknown": n_unknown, "found": len(found)})
             return
         if not chi.is_valid():
             outer.block_exact_candidate(chi)
@@ -257,6 +272,7 @@ def cegis_enumerate_witnesses(n: int, r: int, *,
                                chi, cert, {"cuts": n_cuts, "found": len(found)})
             continue
         outer.block_exact_candidate(chi)            # UNKNOWN: 비승격
+        n_unknown += 1
 
 
 def cegis_enumerate_witness_orbits(n: int, r: int, *,
@@ -274,9 +290,13 @@ def cegis_enumerate_witness_orbits(n: int, r: int, *,
 
     outer = GPOuterSolver(n, r)
     n_cuts = 0
+    n_unknown = 0
     while True:
         chi = outer.next_candidate()
         if chi is None:
+            if n_unknown > 0:
+                yield CegisOutcome("INCONCLUSIVE_WITH_UNKNOWN", None, None,
+                                   {"inner_unknown": n_unknown})
             return
         if not chi.is_valid():
             outer.block_exact_candidate(chi)
@@ -304,6 +324,7 @@ def cegis_enumerate_witness_orbits(n: int, r: int, *,
                 chi, cert, {"cuts": n_cuts, "orbit_size": len(images)})
             continue
         outer.block_exact_candidate(chi)            # UNKNOWN: 비승격
+        n_unknown += 1
 
 
 # ─────────────────────────── naive 기준선 ───────────────────────────

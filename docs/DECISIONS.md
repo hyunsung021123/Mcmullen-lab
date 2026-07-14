@@ -712,3 +712,45 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   금지 원칙과의 균형).
 - 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0023 — 정확성 수정 팩: export GP 결함 / CEGIS UNKNOWN / REFUTED-UNVERIFIED 분리 / trust 자동 도출
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(교차 리뷰, relayed by user) → claude-code(재현 검증 후 수정)
+- 배경: ChatGPT 가 Epic #37 구현 전반을 리뷰하며 결함 4건 + 개선 다수를 지적.
+  claude-code 가 각 지적을 **코드로 재현 검증**한 뒤 사실로 확인된 것만 수정.
+- 수정 1 (재현됨 — 심각): **export 번들의 replay.py 가 GP validity 를 검사하지
+  않았다.** GP-invalid ±1 부호표(uniform OM 아님)도 모든 재배향에 unbalanced
+  circuit 을 갖도록 구성 가능하며(rank 3, n=6 에서 무작위 첫 시도만에 재현),
+  기존 replay.py 는 이를 CERTIFIED 로 출력했다 (내부 certificate_verify.py 는
+  gp_validity 에서 정상 차단 — 결함은 export 경로에만 있었음). 수정: replay
+  템플릿에 3-term GP 검사 + sign key 완전성 검사 추가, export_bundle 은 hash 만이
+  아니라 full verify_certificate 통과를 요구. GP-invalid 공격 재현 코드를 회귀
+  방지 자체 테스트로 고정.
+- 수정 2 (논리 확인): CEGIS 가 inner UNKNOWN(타임아웃) 후보를 블로킹한 뒤 outer 가
+  소진되면 EXHAUSTED(무-witness 증명)를 반환할 수 있었다 — 그 후보가 실제 witness
+  였을 수 있으므로 오판. 수정: unknown > 0 이면 INCONCLUSIVE_WITH_UNKNOWN 반환,
+  두 열거 함수도 종료 전 동일 신호 방출(완전성 주장 차단).
+- 수정 3: Process Verifier 의 실패 상태를 refuted(구체적 반례·결정적 위반)와
+  unverified(실행기 부재)로 분리. fail-closed(게이트 불통과)는 유지하되,
+  "새로운 종류의 가설일수록 실행기가 없어 자동 폐기되는 역설"을 막기 위해
+  unverified 는 backlog 로 남는다. 미등록 REGISTRY 기준도 unverified 로 분류
+  (등록 후 재평가 가능 — 사용자가 이전에 제기한 '미등록 신규 발견의 소실' 우려와
+  일치하는 방향).
+- 수정 4: 필요조건(known_witness_retention)의 공허 통과 제거 — 알려진 witness 가
+  없으면 소규모 결정론적 witness pool(메모이즈, n=2d+2 앞쪽 최대 40개)로 검사하고,
+  pool 도 불가하면 unverified (positive 금지). pool 검사는 전수가 아니므로 통과해도
+  EMPIRICAL 수준임을 docstring 에 명시 (반례 발견은 확실한 REFUTED).
+- 수정 5: EvidenceDB 의 trust_status 를 호출자 지정에서 **자동 도출**로 변경
+  (derive_trust_status) — negative 증거에 CERTIFIED 를 붙이는 API 경로 자체를 제거.
+  positive audit 없이는 certificate/kernel 플래그가 무효.
+- 문서 drift 수정: pipeline 문서의 "구현 금지" 잔재 제목(§10/§13), trust 어휘 추가,
+  RESEARCH_STATUS.md 에 Epic #37 인프라와 (6,3) 3-class 발견 반영.
+- 채택하지 않은 지적: (a) GP-invalid 음성 fixture 를 파일로 커밋 — 오인 위험이
+  있어 자체 테스트 안에서 즉석 생성으로 대체. (b) 필요조건의 완전 전수(∀ witness)
+  검사 — 호출당 수 초~수십 초라 비현실적, 결정론적 부분 pool + 정직한 등급 표기로
+  대체 (전수 모드는 후속 과제).
+- 영향 범위: certificate_export / cegis_search / process_verifier / evidence_db
+  수정. om_core.py/theorist.py 게이트 무변경. 기존 CERTIFIED 결과물 중 저장소
+  내부 verifier 를 거친 것(golden fixture 포함)은 이 결함과 무관하게 유효.
+- 다른 참여자 리뷰 상태: chatgpt 지적 반영분 — 사용자 중계 재확인 대상.

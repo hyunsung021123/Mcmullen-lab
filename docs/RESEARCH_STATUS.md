@@ -13,6 +13,16 @@ McMullen 문제(Larman 추측 f(5)=11)를 유향 매트로이드(OM)로 재구�
 convex position이 되지 않는 uniform OM**을 최소 원소 수 n으로 찾는다. n에서 찾으면
 OM-McMullen 상한이 n−1로 내려간다. d=5의 구체 목표: rank-6, n=12 witness → ν(5) ≤ 11.
 
+## 1-1. 검증·구성 인프라 (Epic #37 — 2026-07-14 상태)
+
+coverage/SAT/CEGIS/대칭 축소/certificate 파이프라인이 병합됨 (도구 상세는
+`docs/AUTONOMOUS_VERIFICATION_PIPELINE.md`). 연구 관점의 핵심 실측:
+
+- **(6,3)의 labeled witness 9,984개는 정확히 3개의 isomorphism class** 로 떨어진다
+  (orbit-aware CEGIS 열거, recall 손실 0 — 문헌 대조는 미완, ChatGPT 교차 리뷰 요청 중).
+- (5,3)/(6,4)에는 witness 가 없음이 CEGIS EXHAUSTED(unknown 0건)로 확인됨.
+- witness certificate 는 저장소 비의존 replay.py 로 제3자가 재검증 가능 (CERTIFIED 등급).
+
 ## 2. 현재 상태 (검증된 것만)
 
 | d | rank | 목표 상한 2d+1 | 현재 상태 |
