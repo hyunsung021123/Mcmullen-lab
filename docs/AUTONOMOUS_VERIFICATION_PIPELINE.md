@@ -101,6 +101,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `symmetry_reduction.py` | WP4 (Z₂)^(n-1)⋊S_n exact orbit 축소 (lex-leader canonical, orbit_dedup, automorphism_count) | 표준 라이브러리 + `om_core` |
 | `research_ir.py` | WP5 typed ResearchStep IR (`research-step/v1`, kind 10종 × 필수 obligation, legacy bias 무손실 왕복) | 표준 라이브러리만 |
 | `process_verifier.py` | WP6 결정론적 Process Verifier (first-failure, fail-closed, legacy 게이트 어댑터) | `om_core`/`criteria`/`generator`/`theorist`/`research_ir` |
+| `evidence_db.py` | WP6b append-only 근거 저장소 (JSONL + hash chain, 수정/삭제 API 없음) | 표준 라이브러리만 |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -166,7 +167,7 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 | WP4 | #41 | **구현됨** — `symmetry_reduction.py` + orbit-aware CEGIS 열거. (6,3) witness 전수 파악 3,181s→63.6s(50x), witness orbit 손실 0 전수 검증, witness isomorphism class 3개 발견 | 완료 |
 | WP5 | #42 | **구현됨** — `research_ir.py`. kind 10종 전부 obligation 보유, legacy 3종 무손실 왕복, hidden-CoT 길이 상한 | 완료 |
 | WP6 | #43 | **구현됨** — `process_verifier.py`. fail-closed(실행기 없는 obligation 은 기각), 기계 판독 가능한 first-failure + 반례, proof_checker/counterexample_hunter 를 legacy adapter 로 보존 | 완료 |
-| WP6b | #44 | append-only evidence DB | #43 |
+| WP6b | #44 | **구현됨** — `evidence_db.py`. JSONL + chain hash(개찬 탐지), trust label 검증, LLM 자유 서술 필드 없음 | 완료 |
 | WP7a | #45 | rule-based step ranker (score 는 순서만, 진실 결정 금지) | #43, #44 |
 | WP7b | #46 | learned PRM (선행 데이터 조건 + 20% 개선 go/no-go) | #45 |
 | WP7c | #48 | Cross-domain translation registry (exactness 등급 강제) | #38 |

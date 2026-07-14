@@ -621,3 +621,28 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
     동작을 바꾸지 않는 것이 WP6 의 명시적 제약 (adapter 로만 재사용).
 - 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0019 — WP6b: append-only evidence DB 도입 (evidence_db.py) — JSONL + hash chain (SQLite 대신)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #44 에 따라 `evidence_db.py` 를 도입한다. Process Verifier 의 audit
+  결과를 step/claim/obligation 결과/first-failure/반례/commit/config hash/artifact
+  hash/runtime/verifier version/certificate path/trust status 와 함께 append-only
+  JSONL 로 기록하고, 레코드마다 이전 레코드 hash 를 연결(chain_hash)해 중간 개찬을
+  탐지한다.
+- SQLite vs JSONL 비교 결과 JSONL 선택. 근거:
+  - 표준 라이브러리 원칙에 둘 다 부합하지만, JSONL 은 사람이 직접 읽고 diff 할 수
+    있으며 append-only 의미가 파일 형식 자체와 일치한다 (SQLite 는 UPDATE/DELETE 가
+    항상 가능해 "수정 API 없음"을 라이브러리 표면에서만 보장하게 됨).
+  - hash chain 을 얹으면 개찬 탐지가 되어 SQLite 의 트랜잭션 무결성 우위가 상쇄됨.
+  - 예상 레코드 수(세션당 수백~수천)에서 성능 차이는 무의미.
+  - 동시 다중 프로세스 기록이 필요해지면 재검토 (그때 SQLite 재고려 — 새 결정으로).
+- 신뢰 규율: LLM 자유 서술 필드가 스키마에 없다(검증된 evidence 가 자유 서술보다
+  우선한다는 원칙의 스키마 강제). trust_status 는 고정 어휘만 허용, 등급 사칭
+  개찬은 chain 검증에서 탐지됨을 자체 테스트로 고정. 수정/삭제 메서드 부재.
+- memory.py 와의 공존: memory.json 의 횟수 집계는 그대로 유지(빠른 학습 신호),
+  evidence DB 는 "왜/무엇으로 판정됐나"의 재현 가능한 근거 저장소 — 서로 대체가
+  아니라 계층이 다르다.
+- 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.
