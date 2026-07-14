@@ -646,3 +646,24 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   아니라 계층이 다르다.
 - 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0020 — WP7a: rule-based step ranker 도입 (step_ranker.py) — gate/score 엄격 분리
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #45 에 따라 `step_ranker.py` 를 도입한다. hard gate(WP6)를 통과한
+  step 들의 **실행 순서만** 결정론적 규칙 점수(S = α·coverage + β·space_reduction
+  + γ·novelty − δ·runtime − η·risk)로 정한다.
+- 신뢰 규율 (구현에 강제됨):
+  - 게이트 미통과 step 에 score 를 호출하면 ValueError — 점수로 게이트를 우회하는
+    경로 자체가 없다.
+  - rank 는 audit 를 절대 변형하지 않는다 (자체 테스트에서 deep-copy 비교로 고정).
+  - novelty 는 감점일 뿐 제거가 아니다 — score 는 어떤 것도 큐에서 빼지 않는다.
+  - 완전한 결정론: 동점은 step id 사전순, 입력 순서 무관.
+- learned PRM(#46) 게이트 준비: 비교 지표 `top_k_pass_rate`(상위 k 개가 다음 hard
+  verification 을 통과하는 비율)를 이 모듈에 고정 — PRM 은 이 지표에서 rule-based
+  대비 20% 이상 개선해야 기본 경로 진입 가능.
+- 가중치(WEIGHTS)와 kind 별 coverage proxy 는 고정 상수이며, 변경은 새 DECISIONS
+  항목으로만 한다 (조용한 튜닝 금지).
+- 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.
