@@ -49,6 +49,7 @@ research_ir.py          typed ResearchStep IR — kind별 obligation, legacy bia
 process_verifier.py     결정론적 Process Verifier — first-failure, fail-closed (WP6)
 evidence_db.py          append-only 근거 저장소(JSONL + hash chain) (WP6b)
 step_ranker.py          rule-based 순위 — hard gate 통과분의 실행 순서만 결정 (WP7a)
+translations.py         cross-domain translation registry — exactness 권한 분리 (WP7c)
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
 benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크

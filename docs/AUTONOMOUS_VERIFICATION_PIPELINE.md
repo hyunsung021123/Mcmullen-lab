@@ -103,6 +103,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `process_verifier.py` | WP6 결정론적 Process Verifier (first-failure, fail-closed, legacy 게이트 어댑터) | `om_core`/`criteria`/`generator`/`theorist`/`research_ir` |
 | `evidence_db.py` | WP6b append-only 근거 저장소 (JSONL + hash chain, 수정/삭제 API 없음) | 표준 라이브러리만 |
 | `step_ranker.py` | WP7a rule-based ranker (gate/score 분리, PRM 비교 지표 top_k_pass_rate 고정) | 표준 라이브러리만 |
+| `translations.py` | WP7c translation registry (equivalence/sound_only/heuristic 권한 분리를 코드로 강제) | `om_core`/`reorientation_cover`/`certificate_verify` |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -171,7 +172,7 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 | WP6b | #44 | **구현됨** — `evidence_db.py`. JSONL + chain hash(개찬 탐지), trust label 검증, LLM 자유 서술 필드 없음 | 완료 |
 | WP7a | #45 | **구현됨** — `step_ranker.py`. 미통과 step score 호출은 오류(게이트 우회 방지), audit 불변, 결정론, PRM 비교 지표 고정 | 완료 |
 | WP7b | #46 | learned PRM (선행 데이터 조건 + 20% 개선 go/no-go) | #45 |
-| WP7c | #48 | Cross-domain translation registry (exactness 등급 강제) | #38 |
+| WP7c | #48 | **구현됨** — `translations.py`. heuristic 은 pruning 게이트에서 PermissionError, coverage 동치가 초기 equivalence 등록 | 완료 |
 | WP8 | #47 | certificate Markdown/LaTeX/Lean export 번들 (`FORMALIZED` 는 Lean kernel 수락 후에만) | #38 |
 
 독립 트랙: #49 (dedup-before-accept), #50 (Discovery evidence provenance).
