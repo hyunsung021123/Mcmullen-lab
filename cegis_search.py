@@ -259,6 +259,53 @@ def cegis_enumerate_witnesses(n: int, r: int, *,
         outer.block_exact_candidate(chi)            # UNKNOWN: 비승격
 
 
+def cegis_enumerate_witness_orbits(n: int, r: int, *,
+                                   inner_timeout_ms: Optional[int] = None,
+                                   certify_each: bool = True):
+    """WP4(#41) orbit-aware 열거: witness 를 찾을 때마다 그 (Z₂)^(n-1)⋊S_n orbit 의
+    게이지 고정 이미지 **전부**를 outer 에서 블로킹하고 계속한다.
+
+    labeled 열거(cegis_enumerate_witnesses)가 orbit 크기만큼 반복하던 것을 orbit 당
+    1회로 줄인다. 방출: CegisOutcome (stats 에 orbit_size 포함). recall 보존은
+    Σ orbit_size 가 labeled 전수 개수와 일치하는지로 검증한다 (자체 테스트)."""
+    from certificate import build_certificate
+    from certificate_verify import verify_certificate
+    from symmetry_reduction import orbit_images
+
+    outer = GPOuterSolver(n, r)
+    n_cuts = 0
+    while True:
+        chi = outer.next_candidate()
+        if chi is None:
+            return
+        if not chi.is_valid():
+            outer.block_exact_candidate(chi)
+            continue
+        inner = find_convex_reorientation_sat(chi, timeout_ms=inner_timeout_ms)
+        if inner.status == "SAT":
+            outer.add_reorientation_obstruction_cut(inner.flip_set)
+            n_cuts += 1
+            assert not _unbalanced_under(chi, inner.flip_set)
+            continue
+        if inner.status == "UNSAT":
+            reorientable, _ = chi.is_reorientable_to_convex()
+            if reorientable:
+                raise AssertionError("inner UNSAT 인데 legacy 는 재배향 가능 — 인코딩 버그")
+            cert = None
+            if certify_each:
+                cert = build_certificate(chi, generator="cegis-orbit-enumerate",
+                                         config={"n": n, "r": r})
+                verify_certificate(cert)
+            images = orbit_images(chi)               # 게이지 고정 orbit 전체
+            for signs in images:
+                outer.solver.add(z3.Or([outer.x[s] != v for s, v in signs.items()]))
+            yield CegisOutcome(
+                "CERTIFIED_WITNESS" if certify_each else "VERIFIED_WITNESS",
+                chi, cert, {"cuts": n_cuts, "orbit_size": len(images)})
+            continue
+        outer.block_exact_candidate(chi)            # UNKNOWN: 비승격
+
+
 # ─────────────────────────── naive 기준선 ───────────────────────────
 def naive_z3_find_witness(n: int, r: int, *, max_models: int = 100_000) -> dict:
     """비교 기준선: GP-적법 모델을 하나씩 열거하며 legacy 로 witness 판정
@@ -308,6 +355,13 @@ if __name__ == "__main__":
     ev_n = out63.chirotope.n
     print(f"(6,3) 첫 witness CERTIFIED OK (outer {out63.stats['outer_models']} 모델, "
           f"cut {out63.stats['cuts']}개) → nu_OM(2) <= {ev_n - 1}")
+
+    # (4) WP4 orbit-aware 열거: (4,2) 의 labeled witness 24개(WP0 실측)가
+    #     orbit 단위 열거에서도 Σ orbit_size 로 정확히 보존되는지 (recall 보존).
+    orbits = list(cegis_enumerate_witness_orbits(4, 2))
+    assert sum(o.stats["orbit_size"] for o in orbits) == 24
+    assert all(o.status == "CERTIFIED_WITNESS" for o in orbits)
+    print(f"(4,2) orbit-aware 열거 OK: orbit {len(orbits)}개, Σ orbit_size = 24 (recall 보존)")
 
     print("cegis_search core-contract assertions OK "
           "(cut replay 강제 / legacy+certificate 이중 replay / UNKNOWN 비승격)")

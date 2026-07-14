@@ -531,3 +531,39 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   - 열거 모드에서 witness 마다 solver 재생성 → 기각(O(k²)). 지속 solver 로 리팩터링.
 - 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject 배선. `om_core.py`/기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0016 — WP4: (Z₂)^(n-1)⋊S_n exact orbit 축소 도입 (symmetry_reduction.py + orbit-aware CEGIS)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #41 에 따라 `symmetry_reduction.py`(relabel / lex-leader canonical_form /
+  orbit_dedup / automorphism_count / orbit_images)를 도입하고, `cegis_search.py` 에
+  orbit-aware 열거(`cegis_enumerate_witness_orbits`)를 추가한다 — witness 를 찾으면
+  그 orbit 의 게이지 고정 이미지 전부를 outer 에서 블로킹.
+- 정확성 계약 (구현에 강제됨):
+  - witness 여부의 (σ,ρ)-불변성을 믿음이 아니라 실측으로 재확인 (자체 테스트,
+    무작위 군 원소 30건).
+  - `orbit_dedup` 은 제거된 모든 candidate 가 자기 orbit 대표를 가리키게 한다
+    (silent drop 금지) — (5,3) 전수 192개에서 witness orbit 손실 0 전수 검증.
+  - recall 보존은 Σ orbit_size == labeled 전수 개수로 검증: (4,2) 24/24,
+    (6,3) 9,984/9,984.
+  - `automorphism_count` 는 |Aut(χ)| 의 정확한 값 — om_core `canonical_key` 나
+    criteria 의 간이 `min_symmetry_order` 지표와 혼동 금지를 문서화.
+- 실측:
+  - **(6,3) witness 전수 파악: labeled 열거 3,181s → orbit 열거 63.6s (50x, 
+    canonicalization 비용 포함)** — Issue #41 의 "전체 benchmark 개선" 수용 조건 충족.
+  - 부수 발견(연구적 가치): (6,3) 의 witness 9,984개는 정확히 **3개의 isomorphism
+    class** 로 떨어진다. (5,3) 의 GP-valid 192개는 단일 orbit (|Aut|=10).
+- 비용 정직성: canonical_form 은 n!·2^(n-1) 전수의 exact 구현이라 n ≤ 7 에서만
+  실용적이다. 싼 술어(legacy witness 판정 0.6ms)를 대량 후보에 거는 용도로는
+  candidate 당 canonicalization(수백 ms)이 오히려 손해 — 이득은 후보당 후속 작업이
+  비싼 곳(CEGIS 열거, certificate 생성, 향후 d≥4 후보 축소)에서 나온다. 대규모 n 용
+  canonical labeling 휴리스틱은 범위 밖이며, 이 exact 버전이 그 정확성 oracle 이다.
+- 검토한 대안과 기각 사유:
+  - circuit incidence graph canonical labeling (nauty 류) → 보류. 외부 heavy
+    dependency 없이 exact oracle 을 먼저 확보하는 게 순서 (decision log 원칙).
+  - lex-leader SAT 제약(대칭 파괴 제약을 outer 에 직접 추가) → 보류. orbit 블로킹이
+    이미 50x 를 달성했고, 대칭 파괴 제약의 완전성(대표 유일성) 증명이 별도로 필요.
+- 영향 범위: 신규 모듈 1개 + `cegis_search.py` 에 함수 1개 추가(기존 함수 무변경)
+  + 문서/CI/pyproject. `om_core.py` 무변경.
+- 다른 참여자 리뷰 상태: pending.
