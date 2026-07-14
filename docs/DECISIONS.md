@@ -754,3 +754,16 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   수정. om_core.py/theorist.py 게이트 무변경. 기존 CERTIFIED 결과물 중 저장소
   내부 verifier 를 거친 것(golden fixture 포함)은 이 결함과 무관하게 유효.
 - 다른 참여자 리뷰 상태: chatgpt 지적 반영분 — 사용자 중계 재확인 대상.
+
+## 0024 — Discovery provenance: finding 마다 지지 표본 id 기록 (#50)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(설계·리뷰, relayed by user) → claude-code(구현)
+- 결정: `discovery.Finding` 에 `supporting_ids`(그 값을 실제로 만족한 witness 표본의
+  ResultRecord id 목록) 추가, `analyze(witness_ids=...)` 로 전달. `search.py` 호출부가
+  store 의 witness record id 를 넘긴다. id 를 모르는 호출 경로는 빈 리스트(하위호환).
+- 이유: 기존 Finding 은 support("k/n")만 기록해 finding 이 틀렸거나 표본이 편향됐을
+  때 역추적이 불가능했다. evidence 원칙(#44)과 정합.
+- 대시보드 finding→표본 드릴다운 UI 는 이번 범위 밖 (UI_ROADMAP Phase 2 와 병합).
+- 영향 범위: discovery.py(필드 추가·하위호환), search.py(호출부 1곳). 판정 로직 무관.
+- 다른 참여자 리뷰 상태: pending.
