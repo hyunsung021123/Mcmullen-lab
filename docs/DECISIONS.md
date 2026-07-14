@@ -802,3 +802,35 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: symmetry_reduction.py 정정(+회귀 테스트), witness_analysis.py 신설,
   배선. om_core.py 무변경. cegis orbit 열거 회귀 없음(자체 테스트 통과).
 - 다른 참여자 리뷰 상태: pending (특히 384 class 의 고대칭 구조는 문헌 대조 요망).
+
+## 0026 — 자율 연구 오케스트레이터(opt-in) + Theorist IR 제안 경로 + cegis 백엔드
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(리뷰 — "부품은 있으나 연결하는 오케스트레이터가 없다", relayed by
+  user) → claude-code(구현)
+- 결정 1 — `theorist.run_debate_ir` (추가 전용): LLM 제안자들이 legacy bias 대신
+  ResearchStep(IR)을 제안하는 새 경로. 정규화(research_ir) → 결정론적 게이트
+  (process_verifier) → positive/unverified/refuted/malformed 분류. 기존
+  run_debate/proof_checker/counterexample_hunter 는 무변경 (CLAUDE.md §2 유지 —
+  게이트는 여전히 100% 코드).
+- 결정 2 — `research_manager.run_autonomous_research` (opt-in): 제안→게이트→
+  evidence 기록(trust 자동 도출)→step_ranker 순위→kind 별 결정론적 실행
+  (generator_family→CEGIS, CERTIFIED 만 채택 / necessary_condition→EMPIRICAL
+  규칙으로 다음 라운드 맥락 반영, hard pruning 금지). unverified 는 backlog 반환.
+  기존 search.py/manager.py/UI 는 무변경 — 대체가 아니라 병행 진입점.
+- 결정 3 — `generator.generate_cegis` + backend="cegis" 등록 (run.py/dashboard
+  선택지 포함): CERTIFIED witness 를 직접 방출하는 실험적 백엔드. solver unknown
+  발생 시 조용한 누락 대신 RuntimeError. 파이프라인의 mcmullen_evaluate 재검증은
+  그대로 거친다 (이중 안전).
+- 검토한 대안과 기각 사유:
+  - search.py 의 기본 루프를 오케스트레이터로 교체 → 기각. 기존 경로는 검증된
+    안정 상태이고, 새 루프는 실행기 커버리지가 아직 부분적(2개 kind)이다 —
+    opt-in 병행으로 신뢰 축적 후 통합 재검토.
+  - LLM 출력에서 legacy_bias 를 없애고 IR 만 강제 → 기각. 정확한 실행기가 있는
+    legacy 경로가 검증 통과율이 높아, 두 형식을 모두 받되 IR 로 정규화.
+- mock 실측 (자체 테스트, Ollama 불필요): 1 라운드에 제안 5건(정규화 실패 1 격리)
+  → 게이트 분류 → CEGIS 실행 → n=6 CERTIFIED witness 채택 → evidence 5건
+  (UNVERIFIED/VERIFIED/CERTIFIED 자동 도출) — end-to-end 0.3초.
+- 영향 범위: theorist.py 추가 전용, generator.py 백엔드 1개 추가, run.py/dashboard
+  선택지 1개, 신규 모듈 1개. om_core.py 무변경.
+- 다른 참여자 리뷰 상태: pending.

@@ -56,7 +56,7 @@ def main():
     ap.add_argument("--n-max", type=int)
     ap.add_argument("--U", type=int)
     ap.add_argument("--rounds", type=int)
-    ap.add_argument("--backend", choices=["backtracking", "random", "z3"],
+    ap.add_argument("--backend", choices=["backtracking", "random", "z3", "cegis"],
                     help="generic 클래스 백엔드 override")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--memory", dest="memory_path", help="장기기억 파일 경로(누적)")
