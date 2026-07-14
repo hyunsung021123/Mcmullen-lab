@@ -46,6 +46,7 @@ reorientation_sat.py    고정 χ convex-reorientation SAT 검증기 (z3 옵셔�
 cegis_search.py         GP outer solver + exact CEGIS 루프 — cut 학습 (z3 옵셔널, WP3)
 symmetry_reduction.py   (Z2)^(n-1)⋊S_n exact orbit 축소 — relabel/canonical/automorphism (WP4)
 research_ir.py          typed ResearchStep IR — kind별 obligation, legacy bias 무손실 왕복 (WP5)
+process_verifier.py     결정론적 Process Verifier — first-failure, fail-closed (WP6)
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
 benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크
