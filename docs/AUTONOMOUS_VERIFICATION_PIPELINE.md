@@ -104,6 +104,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `evidence_db.py` | WP6b append-only 근거 저장소 (JSONL + hash chain, 수정/삭제 API 없음) | 표준 라이브러리만 |
 | `step_ranker.py` | WP7a rule-based ranker (gate/score 분리, PRM 비교 지표 top_k_pass_rate 고정) | 표준 라이브러리만 |
 | `translations.py` | WP7c translation registry (equivalence/sound_only/heuristic 권한 분리를 코드로 강제) | `om_core`/`reorientation_cover`/`certificate_verify` |
+| `certificate_export.py` | WP8 export 번들 (manifest/md/tex/lean/SHA256SUMS + 저장소 비의존 replay.py, formalized=False 강제) | `certificate` |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -173,7 +174,7 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 | WP7a | #45 | **구현됨** — `step_ranker.py`. 미통과 step score 호출은 오류(게이트 우회 방지), audit 불변, 결정론, PRM 비교 지표 고정 | 완료 |
 | WP7b | #46 | learned PRM (선행 데이터 조건 + 20% 개선 go/no-go) | #45 |
 | WP7c | #48 | **구현됨** — `translations.py`. heuristic 은 pruning 게이트에서 PermissionError, coverage 동치가 초기 equivalence 등록 | 완료 |
-| WP8 | #47 | certificate Markdown/LaTeX/Lean export 번들 (`FORMALIZED` 는 Lean kernel 수락 후에만) | #38 |
+| WP8 | #47 | **구현됨** — `certificate_export.py`. replay.py 는 저장소 없이 표준 라이브러리만으로 재검증(subprocess 격리 실측), Lean 스켈레톤 생성은 FORMALIZED 아님(manifest 강제) | 완료 |
 
 독립 트랙: #49 (dedup-before-accept), #50 (Discovery evidence provenance).
 

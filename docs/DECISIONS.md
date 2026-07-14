@@ -690,3 +690,25 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
     전환"이라는 원칙은 강제 장치가 없으면 침식된다 — 코드 게이트로 강제.
 - 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0022 — WP8: certificate export 번들 도입 (certificate_export.py) — FORMALIZED 비사칭 강제
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #47 에 따라 `certificate_export.py` 를 도입한다. certificate v1
+  하나에서 번들(manifest.json / certificate.json / chirotope.json / report.md /
+  report.tex / replay.py / theorem.lean / SHA256SUMS)을 결정론적으로 생성한다.
+- 신뢰 규율 (구현에 강제됨):
+  - **replay.py 는 저장소 비의존**: 표준 라이브러리만으로 certificate 를 재검증하는
+    독립 스크립트가 번들에 포함된다 (자체 테스트가 subprocess 격리 실행으로 확인 —
+    양성 CERTIFIED + 조작 certificate 비-0 실패).
+  - **Lean 파일 생성 ≠ FORMALIZED**: manifest 의 `formalized` 는 항상 False 로
+    생성되고, theorem.lean 자체에 경고가 박혀 있다. 실제 Lean kernel 수락 후에만
+    사람이 별도 절차로 승격한다.
+  - hash 불일치 certificate 는 번들 생성 자체를 거부한다.
+  - 모든 파일이 SHA256SUMS 로 검증 가능 (sha256sum -c 호환).
+- Lean 스켈레톤은 주석 처리된 상태로 생성된다(UniformChirotope 등 정의부가 없는
+  상태에서 컴파일 가능한 것처럼 보이는 파일을 만들지 않기 위함 — placeholder
+  금지 원칙과의 균형).
+- 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.
