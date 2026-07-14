@@ -767,3 +767,38 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 대시보드 finding→표본 드릴다운 UI 는 이번 범위 밖 (UI_ROADMAP Phase 2 와 병합).
 - 영향 범위: discovery.py(필드 추가·하위호환), search.py(호출부 1곳). 판정 로직 무관.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0025 — 대칭군 정정: 전역 부정 포함 (Z₂)^n⋊S_n + witness 구조 압축 모듈 도입
+
+- 날짜: 2026-07-14
+- 제안자: claude-code (자체 교차 검증에서 발견) — witness_analysis 모듈 방향은
+  chatgpt 제안 (relayed by user)
+- **발견된 버그 (자체 교차 검증)**: WP4 의 canonical_form/automorphism_count/
+  orbit_images 가 쓰던 "0-고정 flip × relabel" 열거는 **합성에 닫혀 있지 않다** —
+  σ(A) 가 원소 0 을 포함하면 그 합성은 홀수 r 에서 전역 부정(-χ = χ^E, 즉 전체
+  집합 재배향)으로 나타나 열거 밖으로 나간다. 결과: orbit-stabilizer 정리 위반이
+  실측으로 재현되었고(gauge slice 3,840 vs 예측 2,880), canonical_form 이 한
+  isomorphism class 를 두 key 로 쪼갤 수 있었다.
+- 영향 평가 (정직):
+  - WP4 의 recall 주장(Σ orbit_size == 전수 개수)은 **유효** — 블로킹된 이미지는
+    전부 진짜 동형 이미지였고(가짜 블로킹 없음), 완전성은 전수 개수 대조로 확인됨.
+  - "(6,3) witness = 3개 isomorphism class" 결론도 **전체 군 기준으로 재확인** —
+    정확한 분해는 gauge 크기 {5,760, 3,840, 384}, |Stab| = {4, 6, 60}
+    (384 class 는 고대칭). 이전 실행이 3개로 맞았던 것은 결과적으로 옳았으나
+    근거가 불완전했다.
+- 수정: 전역 부정을 canonical_form/orbit_images/automorphism_count 에 포함
+  (짝수 r 에선 χ^E=χ 라 무해). group_order 를 2^n·n! 로 정정. orbit-stabilizer
+  정합(slice == |G|/(2·|Stab|))을 회귀 방지 자체 테스트로 고정.
+- **witness_analysis.py 신설** (구조 압축 — exact 계산 → 압축 → AI 가설 → 반례
+  사냥 → 사람의 일반화 경로의 2단계):
+  - minimal_obstruction_cover (greedy + z3 exact 최소, 반환 전 커버 완전성 재검증)
+  - unsat_core_supports (z3 unsat core + core-only UNSAT replay 강제)
+  - witness_profile (전체 군 |Stab|/orbit 크기/균형 히스토그램)
+  - **연구적 발견**: (6,3) 의 세 witness class 모두 **정확히 3개의 circuit
+    obstruction 으로 모든 32개 재배향이 차단**된다 (exact 최소 커버 크기 3).
+    circuit_hist 의 min(pos,neg)=1 개수는 class 별 3/4/5 로 서로 다름.
+    이는 검증된 계산적 사실(VERIFIED)이지 일반 정리가 아니다 — "witness 는 항상
+    작은 obstruction family 로 설명되는가"는 후속 가설 후보.
+- 영향 범위: symmetry_reduction.py 정정(+회귀 테스트), witness_analysis.py 신설,
+  배선. om_core.py 무변경. cegis orbit 열거 회귀 없음(자체 테스트 통과).
+- 다른 참여자 리뷰 상태: pending (특히 384 class 의 고대칭 구조는 문헌 대조 요망).

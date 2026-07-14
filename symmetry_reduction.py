@@ -59,8 +59,14 @@ def _sign_vector(ch: Chirotope, subs: list) -> tuple:
 
 
 def canonical_form(ch: Chirotope) -> tuple:
-    """(Z₂)^(n-1) ⋊ S_n orbit 의 lex-leader 부호열 (exact, n!·2^(n-1) 전수).
-    같은 orbit ⟺ 같은 canonical_form. n ≤ 7 권장."""
+    """전체 동형군 (Z₂)^n ⋊ S_n orbit 의 lex-leader 부호열 (exact 전수).
+    같은 orbit ⟺ 같은 canonical_form. n ≤ 7 권장.
+
+    주의(0025): "0-고정 flip × relabel" 만 열거하면 합성에 닫혀 있지 않다 —
+    σ(A) 가 0 을 포함하면 그 합성은 (홀수 r 에서) 전역 부정으로 나타나 열거 밖으로
+    나가고, 한 isomorphism class 가 두 canonical key 로 쪼개질 수 있다 (실측 재현).
+    전역 부정은 '모든 원소 재배향'이라는 적법한 군 원소이므로 후보에 포함한다
+    (짝수 r 에선 χ^E = χ 라 무해한 중복)."""
     subs = sorted(combinations(range(ch.n), ch.r))
     others = list(range(1, ch.n))
     best = None
@@ -69,23 +75,31 @@ def canonical_form(ch: Chirotope) -> tuple:
         for bits in product((0, 1), repeat=ch.n - 1):
             flip = {others[i] for i, b in enumerate(bits) if b}
             seq = _sign_vector(rch.reorient(flip), subs)
+            neg = tuple(-x for x in seq)               # 전역 부정 = flip(E)
             if best is None or seq < best:
                 best = seq
+            if neg < best:
+                best = neg
     return best
 
 
 def automorphism_count(ch: Chirotope) -> int:
-    """|Aut(χ)| = |{(σ, flip): relabel(χ,σ)^flip == χ}| 의 정확한 값.
-    om_core 의 간이 symmetry_order(재배향만, relabeling 없음)와 다른 개념이다."""
+    """전체 군 (Z₂)^n ⋊ S_n 에서의 |Stab(χ)| 정확값 (0025 정정).
+    (σ, A⊆E) 는 (σ, A'⊆{1..n-1}) + 선택적 전역 부정으로 유일 분해되므로
+    |Stab| = #{(σ,A'): image == χ} + #{(σ,A'): image == -χ}.
+    orbit-stabilizer: |full orbit| = 2^n·n!/|Stab|, 게이지 슬라이스 = 그 절반.
+    om_core 의 간이 symmetry_order(재배향만)와 다른 개념이다."""
     subs = sorted(combinations(range(ch.n), ch.r))
     target = _sign_vector(ch, subs)
+    neg_target = tuple(-x for x in target)
     others = list(range(1, ch.n))
     cnt = 0
     for perm in permutations(range(ch.n)):
         rch = relabel(ch, perm)
         for bits in product((0, 1), repeat=ch.n - 1):
             flip = {others[i] for i, b in enumerate(bits) if b}
-            if _sign_vector(rch.reorient(flip), subs) == target:
+            seq = _sign_vector(rch.reorient(flip), subs)
+            if seq == target or seq == neg_target:
                 cnt += 1
     return cnt
 
@@ -115,8 +129,8 @@ def orbit_dedup(chirotopes: Iterable[Chirotope]) -> dict:
 
 
 def group_order(n: int) -> int:
-    """작용군 (Z₂)^(n-1) ⋊ S_n 의 크기 = n! · 2^(n-1)."""
-    return factorial(n) * (1 << (n - 1))
+    """전체 동형군 (Z₂)^n ⋊ S_n 의 크기 = n! · 2^n (0025 정정 — 전역 부정 포함)."""
+    return factorial(n) * (1 << n)
 
 
 def orbit_images(ch: Chirotope, *, gauge_fixed: bool = True) -> list[dict]:
@@ -135,12 +149,14 @@ def orbit_images(ch: Chirotope, *, gauge_fixed: bool = True) -> list[dict]:
         for bits in product((0, 1), repeat=ch.n - 1):
             flip = {others[i] for i, b in enumerate(bits) if b}
             img = rch.reorient(flip)
-            if gauge_fixed and img.signs[first] != 1:
-                continue
-            key = _sign_vector(img, subs)
-            if key not in seen:
-                seen.add(key)
-                out.append(dict(img.signs))
+            for signs in (img.signs,
+                          {t: -v for t, v in img.signs.items()}):   # 전역 부정 포함 (0025)
+                if gauge_fixed and signs[first] != 1:
+                    continue
+                key = tuple(signs[s] for s in subs)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(dict(signs))
     return out
 
 
@@ -204,6 +220,17 @@ if __name__ == "__main__":
     assert group_order(4) % a == 0 and a >= 1
     print(f"automorphism_count(볼록 사각형) = {a} (군 크기 {group_order(4)} 의 약수) — "
           f"om_core 간이 symmetry_order 와 별개 개념임을 명시")
+
+    # (6) 0025 회귀 방지: orbit-stabilizer 정리 정합 — 게이지 슬라이스 크기가
+    #     정확히 group_order/(2·|Stab|) 이어야 한다 (이 정합이 깨졌던 것이 0025 버그).
+    wit63 = next(ch for ch in generate_backtracking(6, 3, dedup=False,
+                                                    max_candidates=10**9,
+                                                    max_nodes=10**9)
+                 if not ch.is_reorientable_to_convex()[0])
+    slice_size = len(orbit_images(wit63, gauge_fixed=True))
+    stab = automorphism_count(wit63)
+    assert slice_size == group_order(6) // (2 * stab), (slice_size, stab)
+    print(f"orbit-stabilizer 정합 OK (slice {slice_size} == {group_order(6)}/(2·{stab}))")
 
     print("symmetry_reduction core-contract assertions OK "
           "(불변성 실측 / lex-leader orbit / silent drop 금지 / witness 손실 0)")
