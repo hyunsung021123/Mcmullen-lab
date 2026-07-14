@@ -189,6 +189,31 @@ def generate_cyclic(n: int, r: int, *,
         yield ch
 
 
+def generate_cegis(n: int, r: int, *,
+                   accept: Optional[Callable[[Chirotope], bool]] = None,
+                   max_candidates: int = 200, **_) -> Iterator[Chirotope]:
+    """실험적 백엔드 (0026): CEGIS 로 CERTIFIED witness 만 직접 방출.
+    다른 백엔드와 달리 '후보'가 아니라 이미 legacy+certificate 이중 replay 를
+    통과한 witness 를 내놓는다 (파이프라인의 mcmullen_evaluate 가 다시 한 번
+    검증하므로 이중 안전). z3 미설치면 안내 후 종료. solver unknown 이 발생해
+    완전성이 깨지면 RuntimeError (조용한 누락 금지)."""
+    try:
+        from cegis_search import cegis_enumerate_witnesses
+    except (ImportError, RuntimeError):
+        print("[generate_cegis] z3-solver 가 없습니다. pip install z3-solver 후 사용하세요.")
+        return
+    emitted = 0
+    for out in cegis_enumerate_witnesses(n, r, max_witnesses=max_candidates):
+        if out.status == "INCONCLUSIVE_WITH_UNKNOWN":
+            raise RuntimeError("CEGIS inner solver unknown 발생 — 열거 완전성 주장 불가")
+        ch = out.chirotope
+        if accept is None or accept(ch):
+            emitted += 1
+            yield ch
+        if emitted >= max_candidates:
+            return
+
+
 def generate(n: int, r: int, *, backend: str = "backtracking", **kw) -> Iterator[Chirotope]:
     if backend == "z3":
         return generate_z3(n, r, **kw)
@@ -196,6 +221,8 @@ def generate(n: int, r: int, *, backend: str = "backtracking", **kw) -> Iterator
         return generate_random_realizable(n, r, **kw)
     if backend == "cyclic":
         return generate_cyclic(n, r, **kw)
+    if backend == "cegis":
+        return generate_cegis(n, r, **kw)
     return generate_backtracking(n, r, **kw)
 
 

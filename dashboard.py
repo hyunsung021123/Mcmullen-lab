@@ -112,7 +112,7 @@ def render_design_tab(is_running: bool):
 
         with st.expander("고급 설정"):
             backend_override = st.selectbox("백엔드 override (generic 클래스만)",
-                                            ["(자동)", "backtracking", "random", "z3"])
+                                            ["(자동)", "backtracking", "random", "z3", "cegis"])
             dedup = st.checkbox("재배향-동치 중복 제거", value=True)
             max_cand = st.number_input("라운드당 최대 후보", 10, 10_000_000, 300)
             seed = st.number_input("random 시드 (0 = 무작위)", 0, 10**9, 0)
