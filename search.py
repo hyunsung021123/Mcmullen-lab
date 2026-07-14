@@ -207,7 +207,9 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
 
         witnesses_ch = _witness_chirotopes(store)
         nonwit_ch = _nonwitness_chirotopes(store)
-        findings = disco.analyze(witnesses_ch, nonwit_ch) if disco else []
+        witness_ids = [rec.id for rec in store.results if rec.is_witness][:len(witnesses_ch)]
+        findings = (disco.analyze(witnesses_ch, nonwit_ch, witness_ids=witness_ids)
+                    if disco else [])
         finding_dicts = [f.as_dict() for f in findings]
         failures = dict(fail_counter.most_common(5))
         if failures:

@@ -67,11 +67,14 @@ class Finding:
     support: str              # "k/n"
     suggested_bias: Optional[dict] = None
     note: str = ""
+    # provenance (#50): 이 finding 을 지지한 witness 표본의 ResultRecord id 들.
+    # id 를 모르는 호출 경로에서는 빈 리스트 (하위호환).
+    supporting_ids: list = field(default_factory=list)
 
     def as_dict(self):
         return {"invariant": self.invariant, "value": self.value, "kind": self.kind,
                 "support": self.support, "suggested_bias": self.suggested_bias,
-                "note": self.note}
+                "note": self.note, "supporting_ids": list(self.supporting_ids)}
 
 
 # invariant → REGISTRY 기준 매핑(가능한 것만; 나머지는 관찰만)
@@ -93,10 +96,16 @@ class DiscoveryEngine:
         self.min_samples = min_samples
 
     def analyze(self, witnesses: list[Chirotope],
-                nonwitnesses: list[Chirotope] | None = None) -> list[Finding]:
+                nonwitnesses: list[Chirotope] | None = None,
+                witness_ids: list | None = None) -> list[Finding]:
+        """witness_ids (#50): witnesses[i] 의 provenance id (ResultRecord.id 등).
+        주어지면 각 finding 에 '그 값을 실제로 만족한 표본들의 id'가 기록된다 —
+        나중에 finding 이 틀렸거나 표본이 편향됐을 때 역추적 가능."""
         findings: list[Finding] = []
         if len(witnesses) < self.min_samples:
             return findings
+        if witness_ids is not None and len(witness_ids) != len(witnesses):
+            raise ValueError("witness_ids 길이가 witnesses 와 다름")
         w_inv = [invariants(ch) for ch in witnesses]
         nw_inv = [invariants(ch) for ch in (nonwitnesses or [])]
         keys = ["acyclic", "totally_cyclic", "min_circuit_balance",
@@ -119,10 +128,13 @@ class DiscoveryEngine:
             if nw_frac is not None and nw_frac <= 0.4:
                 kind = "distinguishing"
                 note = f"non-witness 에선 {nw_frac:.0%} 만 해당 → 구별 특징"
+            sup_ids = ([witness_ids[i] for i, dv in enumerate(w_inv)
+                        if dv[k] == val] if witness_ids is not None else [])
             findings.append(Finding(
                 invariant=k, value=val, kind=kind,
                 support=f"{cnt}/{len(w_vals)}",
-                suggested_bias=_suggest_bias(k, val), note=note))
+                suggested_bias=_suggest_bias(k, val), note=note,
+                supporting_ids=sup_ids))
         return findings
 
 
@@ -138,7 +150,19 @@ if __name__ == "__main__":
         except ValueError:
             continue
         (wits if mcmullen_evaluate(ch)["witness"] else nonwits).append(ch)
-    findings = DiscoveryEngine().analyze(wits[:6], nonwits[:6])
+    ids = [f"w{i}" for i in range(6)]
+    findings = DiscoveryEngine().analyze(wits[:6], nonwits[:6], witness_ids=ids)
+    # provenance (#50): 각 finding 의 supporting_ids 는 실제로 그 값을 만족한
+    # 표본들의 id 여야 하고, as_dict 왕복에도 포함돼야 한다.
+    from discovery import invariants as _inv
+    for f in findings:
+        expect = [ids[i] for i, ch in enumerate(wits[:6])
+                  if _inv(ch)[f.invariant] == f.value]
+        assert f.supporting_ids == expect, (f.invariant, f.supporting_ids, expect)
+        assert f.as_dict()["supporting_ids"] == expect
+    legacy = DiscoveryEngine().analyze(wits[:6], nonwits[:6])   # id 없는 하위호환 경로
+    assert all(f.supporting_ids == [] for f in legacy)
+    print("provenance(supporting_ids) assertion OK (#50) + 하위호환 빈 리스트 OK")
     print(f"witness {len(wits)}개 / non {len(nonwits)}개 분석 → 발견 {len(findings)}개")
     for f in findings:
         print(f"  [{f.kind:13}] {f.invariant}={f.value} ({f.support}) "
