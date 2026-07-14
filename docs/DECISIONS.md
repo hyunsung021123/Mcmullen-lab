@@ -667,3 +667,26 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   항목으로만 한다 (조용한 튜닝 금지).
 - 영향 범위: 신규 모듈 1개(표준 라이브러리만) + 문서/CI/pyproject. 기존 모듈 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0021 — WP7c: Cross-Domain Translation Registry 도입 (translations.py)
+
+- 날짜: 2026-07-14
+- 제안자: chatgpt(Epic #37 설계) → human(순차 진행 지시) → claude-code(구현). (source: chatgpt, relayed by user)
+- 결정: Issue #48 에 따라 `translations.py` 를 도입한다. 정식 translation 은
+  name/source_domain/target_domain/exactness/encode/decode/obligations 계약을 갖고,
+  exactness 등급별 사용 권한이 코드로 강제된다:
+  - equivalence → hard search constraint(후보 제거) 가능
+  - sound_only → 증명된 방향(sound_direction)으로만 가능
+  - heuristic → ranking 전용, `assert_usable_for_pruning` 에서 PermissionError
+    (조용한 recall 손실 경로 원천 차단)
+- 초기 등록: `om-reorientation->boolean-hypercube-coverage` (equivalence) —
+  WP1(#38)에서 14,439건 mismatch 0 + 독립 replay 로 검증된 동치. decode 는
+  certificate 독립 검증(certificate_verify) 통과 시에만 주장을 반환한다.
+- 미등록(의도적): SAT/CEGIS 번역은 구현됐지만 equivalence 승격은 교차 리뷰 후,
+  REOM/Lawrence 는 사용자의 인코딩 형식 확정 대기(RESEARCH_STATUS §5),
+  tope-graph 류는 보존 정리 없는 동안 heuristic 전용.
+- 검토한 대안과 기각 사유:
+  - exactness 를 문서 규약으로만 두기 → 기각. "prompt persona 추가 ≠ 교차 도메인
+    전환"이라는 원칙은 강제 장치가 없으면 침식된다 — 코드 게이트로 강제.
+- 영향 범위: 신규 모듈 1개 + 문서/CI/pyproject. 기존 모듈 무변경.
+- 다른 참여자 리뷰 상태: pending.
