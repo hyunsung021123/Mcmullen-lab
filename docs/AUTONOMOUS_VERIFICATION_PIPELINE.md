@@ -132,6 +132,20 @@ FORMALIZED    Lean 같은 proof assistant kernel 이 수락
 상위 등급을 사칭하지 않는다 — 특히 `CERTIFIED` 를 `FORMALIZED` 로, solver 의
 UNSAT(`VERIFIED_BY_SOLVER`)를 `CERTIFIED` 로 표시하지 않는다.
 
+추가 어휘 (0023 수정 팩):
+
+- Process Verifier 의 audit status 는 `positive` / `refuted`(구체적 반례·결정적
+  위반) / `unverified`(자동 실행기 부재 — hard gate 불통과지만 연구 backlog 대상)
+  세 가지다. "검증 불가"를 "반박됨"과 혼동하지 않는다.
+- Evidence DB 의 trust_status 는 호출자가 지정할 수 없고 audit 에서 자동 도출된다
+  (`derive_trust_status`) — negative 증거에 CERTIFIED 를 붙이는 경로가 존재하지
+  않는다.
+- CEGIS 의 `EXHAUSTED`(무-witness 증명)는 inner UNKNOWN 이 0건일 때만 반환된다.
+  UNKNOWN 후보를 버린 적이 있으면 `INCONCLUSIVE_WITH_UNKNOWN` — 완전성 주장 불가.
+- export 번들의 `replay.py` 는 GP validity 를 포함한 전체 검증을 수행하고,
+  `export_bundle` 은 hash 만이 아니라 full `verify_certificate` 를 통과한
+  certificate 만 번들화한다 (GP-invalid 부호표 인증 공격 차단 — 0023 실증).
+
 ## 7. Trusted computing base (TCB)
 
 현재 TCB 는 다음뿐이다:
@@ -159,7 +173,7 @@ recall 보존 증명이 있을 때만 적용한다 (#41, #49).
 verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프가 자동
 생성할 수 있는 코드는 향후 별도 sandbox/plugin 영역으로 제한한다.
 
-## 10. 후속 Work Package 로드맵 (구현 금지 — Issue로만 존재)
+## 10. Work Package 로드맵 (상태는 표의 '구현됨' 표기가 최신)
 
 각 단계는 선행 게이트 통과 후에만 착수한다. 상세 수용 조건은 각 Issue 에 있다.
 
@@ -215,7 +229,7 @@ UNSAT 이면 legacy replay + certificate + 독립 검증.
 계산으로 replay 된다 — (a) 반례 χ 를 실제로 배제하는지, (b) 알려진 witness 를
 배제하지 않는지.
 
-## 13. WP5/6 (ResearchStep IR + Process Verifier) 개요 — 참고용, 구현 금지
+## 13. WP5/6 (ResearchStep IR + Process Verifier) — 구현됨 (#42/#43)
 
 모든 제안을 `research-step/v1` 로 정규화 (kind: definition / equivalence /
 necessary_condition / sufficient_condition / pruning_rule / generator_family /

@@ -10,8 +10,10 @@ hard gate. learned PRM(#46)보다 먼저 존재해야 하는 층이다.
 
 - 한 obligation 이라도 실패하면 즉시 기각하고 **첫 실패 위치**를 기록한다.
 - 동적 피드백은 긴 자유 텍스트가 아니라 기계 판독 가능한 구조로 전달한다:
-      {"status": "negative", "first_failed_obligation": "...",
+      {"status": "refuted"|"unverified"|"positive", "first_failed_obligation": "...",
        "counterexample_id": "...", "detail": "...", ...}
+  refuted(반례/결정적 위반)와 unverified(실행기 없음)는 절대 혼동하지 않는다 —
+  unverified 는 hard gate 를 못 넘지만 연구 backlog 에 남는다 (0023).
 - **fail-closed**: 자동 실행기가 없는 obligation 은 통과가 아니라 **기각**이다.
   "검증할 수 없음"과 "검증됨"을 절대 혼동하지 않는다 — 실행기가 생기기 전까지
   그 kind 의 step 은 hard gate 를 넘을 수 없다.
@@ -34,13 +36,52 @@ from theorist import proof_checker, counterexample_hunter, _criterion_holds
 from research_ir import validate_step, StepValidationError, to_legacy_bias
 
 
+# audit status 어휘 (0023 — REFUTED 와 UNVERIFIED 를 절대 혼동하지 않는다):
+#   positive   : 모든 obligation 통과 → hard gate 통과
+#   refuted    : 구체적 반례 또는 결정적 위반이 발견됨 → 폐기
+#   unverified : 자동 실행기가 없어 검증 불가 → hard gate 는 못 넘지만
+#                연구 backlog 에 남는다 ("검증 불가"는 "거짓"이 아니다)
+AUDIT_STATUSES = ("positive", "refuted", "unverified")
+
+
 def _audit(status: str, passed: list, *, first_failed: Optional[str] = None,
            detail: str = "", counterexample_id: Optional[str] = None,
            counterexample: Optional[dict] = None) -> dict:
+    assert status in AUDIT_STATUSES
     return {"status": status, "hard_gate_passed": status == "positive",
             "passed": list(passed), "first_failed_obligation": first_failed,
             "detail": detail, "counterexample_id": counterexample_id,
             "counterexample": counterexample}
+
+
+_WITNESS_POOL_CACHE: dict = {}
+
+
+def _small_witness_pool(d: int, r: int, *, max_pool: int = 40,
+                        max_nodes: int = 300_000) -> list:
+    """(d,r) 의 소규모 전수 가능 영역에서 결정론적 witness pool 을 구축 (메모이즈).
+    필요조건의 공허 통과 방지용 — witness 가 존재하는 최소 n(=2d+2 근처)에서
+    백트래킹 열거 순서상 앞쪽 witness 최대 max_pool 개.
+    주의: 이것은 '전수'가 아니라 결정론적 부분집합이다 — 통과해도 필요조건의
+    증명이 아니며(EMPIRICAL 수준), 반례가 나오면 확실한 반박(REFUTED)이다."""
+    key = (d, r, max_pool)
+    if key in _WITNESS_POOL_CACHE:
+        return _WITNESS_POOL_CACHE[key]
+    pool: list = []
+    n = 2 * d + 2
+    if r + 1 <= n:
+        try:
+            for cand in generate_backtracking(n, r, dedup=False,
+                                              max_candidates=10 ** 9,
+                                              max_nodes=max_nodes):
+                if not cand.is_reorientable_to_convex()[0]:
+                    pool.append(cand)
+                    if len(pool) >= max_pool:
+                        break
+        except Exception:
+            pool = []
+    _WITNESS_POOL_CACHE[key] = pool
+    return pool
 
 
 def _legacy_of(step: dict) -> Optional[dict]:
@@ -55,7 +96,7 @@ def verify_until_first_failure(step: dict, *,
                                known_nonwitnesses: list | None = None,
                                d: int | None = None, r: int | None = None,
                                memory=None) -> dict:
-    """step 의 obligation 들을 순서대로 실행. 첫 실패에서 즉시 기각(negative).
+    """step 의 obligation 들을 순서대로 실행. 첫 실패에서 즉시 중단.\n    실패는 refuted(반례/결정적 위반)와 unverified(실행기 없음)로 구분된다.
 
     d/r: small-instance 검사에 쓸 문제 크기 (없으면 scope 에서 추론 시도).
     반환 audit 은 결정론적이다 — 같은 입력이면 같은 출력."""
@@ -73,16 +114,18 @@ def verify_until_first_failure(step: dict, *,
     legacy = _legacy_of(step) if isinstance(step, dict) else None
 
     for obligation in (step.get("obligations", []) if isinstance(step, dict) else []):
-        ok, detail, cx_id, cx = _run_obligation(
+        verdict, detail, cx_id, cx = _run_obligation(
             obligation, step, legacy, d, r,
             known_witnesses, known_nonwitnesses, memory)
-        if not ok:
-            return _audit("negative", passed, first_failed=obligation,
+        if verdict is not True:
+            # verdict ∈ {"refuted", "unverified"} — 어느 쪽이든 hard gate 는 못 넘지만
+            # unverified 는 backlog 대상이지 반박된 것이 아니다.
+            return _audit(verdict, passed, first_failed=obligation,
                           detail=detail, counterexample_id=cx_id, counterexample=cx)
         passed.append(obligation)
 
     if not passed:
-        return _audit("negative", passed, first_failed="schema_valid",
+        return _audit("refuted", passed, first_failed="schema_valid",
                       detail="obligation 이 없는 step — 검증 의무 없는 주장은 기각")
     return _audit("positive", passed)
 
@@ -97,7 +140,7 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
             validate_step(step)
             return True, "", None, None
         except StepValidationError as e:
-            return False, str(e), None, None
+            return "refuted", str(e), None, None
 
     if obligation == "type_valid":
         if legacy is not None:
@@ -105,20 +148,32 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
             if btype in ("require_property", "forbid_property"):
                 name = spec.get("name")
                 if name not in REGISTRY:
-                    return False, f"미등록 기준 '{name}' (CLAUDE.md §4)", None, None
+                    # 미등록 = "이 성질의 실행기가 아직 없음" — 거짓이 아니라 미검증.
+                    # criteria.py 에 register() 되면 재평가 가능 (연구 backlog 대상).
+                    return "unverified", \
+                        f"미등록 기준 '{name}' — criteria.py 에 등록되기 전까지 검증 불가" \
+                        f" (CLAUDE.md §4: 등록 전에는 조건으로 사용 금지)", None, None
             elif btype == "element_count":
                 n = spec.get("n")
                 if not isinstance(n, int) or not (r + 1 <= n <= 2 * d + 4):
-                    return False, f"n 범위 밖: {n}", None, None
+                    return "refuted", f"n 범위 밖: {n}", None, None
             return True, "", None, None
         # 비-legacy: scope 타입만 검사 가능
         scope = step.get("claim", {}).get("scope", {})
         if not isinstance(scope, dict):
-            return False, "scope 가 dict 아님", None, None
+            return "refuted", "scope 가 dict 아님", None, None
         return True, "", None, None
 
     # ── legacy property/element 기반 step 에서 실행 가능한 수학적 검사 ──
     if obligation == "known_witness_retention" and legacy is not None:
+        if not witnesses:
+            # 공허 통과 금지 (0023): 알려진 witness 가 없으면 소규모 전수 가능 영역의
+            # witness pool 로 검사한다. pool 도 만들 수 없으면 unverified.
+            witnesses = _small_witness_pool(d, r)
+            if not witnesses:
+                return "unverified", \
+                    (f"알려진 witness 없음 + (d={d},r={r}) 소규모 witness pool 확보 실패 — "
+                     f"필요조건을 공허하게 통과시키지 않는다"), None, None
         cx = counterexample_hunter(legacy, witnesses)      # 결정론적 적대자 어댑터
         if cx:
             w = next((w for w in witnesses
@@ -128,13 +183,13 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
                       or legacy["type"] == "forbid_property" and
                       _criterion_holds(legacy["spec"]["name"],
                                        legacy["spec"].get("args", []), w)), None)
-            return False, cx, f"witness-n{w.n}" if w else None, \
+            return "refuted", cx, f"witness-n{w.n}" if w else None, \
                 (w.to_dict() if w else None)
         return True, "", None, None
 
     if obligation == "small_instance_differential_test" and legacy is not None:
         ok, reason = proof_checker(legacy, d, r, memory)   # 게이트 어댑터(공허성 포함)
-        return (True, "", None, None) if ok else (False, f"proof_checker: {reason}",
+        return (True, "", None, None) if ok else ("refuted", f"proof_checker: {reason}",
                                                   None, None)
 
     if obligation == "known_nonwitness_soundness" and legacy is not None:
@@ -144,10 +199,10 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
             name = legacy["spec"]["name"]; args = legacy["spec"].get("args", [])
             for nw in nonwitnesses:
                 if _criterion_holds(name, args, nw):
-                    return False, f"non-witness(n={nw.n})가 '{name}' 만족 — 충분조건 반례", \
+                    return "refuted", f"non-witness(n={nw.n})가 '{name}' 만족 — 충분조건 반례", \
                         f"nonwitness-n{nw.n}", nw.to_dict()
             return True, "", None, None
-        return False, "이 legacy type 에는 충분조건 해석이 정의되지 않음", None, None
+        return "unverified", "이 legacy type 에는 충분조건 해석이 정의되지 않음", None, None
 
     if obligation == "gp_validity_sample" and legacy is not None \
             and legacy["type"] == "element_count":
@@ -155,10 +210,10 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
         sample = list(generate_backtracking(n, r, dedup=False,
                                             max_candidates=5, max_nodes=200_000))
         if not sample:
-            return False, f"n={n} 에서 GP-valid 후보가 생성되지 않음", None, None
+            return "refuted", f"n={n} 에서 GP-valid 후보가 생성되지 않음", None, None
         bad = next((ch for ch in sample if not ch.is_valid()), None)
         if bad:
-            return False, "생성 표본 중 GP-invalid 존재 (생성기 회귀)", None, bad.to_dict()
+            return "refuted", "생성 표본 중 GP-invalid 존재 (생성기 회귀)", None, bad.to_dict()
         return True, "", None, None
 
     if obligation == "exact_candidate_verification" and legacy is not None \
@@ -170,9 +225,11 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
             ch.is_reorientable_to_convex()      # 표본이 legacy 경로로 판정 가능한지
         return True, "", None, None
 
-    # ── 자동 실행기가 없는 obligation: fail-closed ──
-    return False, (f"obligation '{obligation}' 의 자동 실행기가 아직 없음 — "
-                   f"fail-closed 원칙에 따라 기각 ('검증 불가'는 '검증됨'이 아니다)"), \
+    # ── 자동 실행기가 없는 obligation: fail-closed, 단 상태는 unverified ──
+    # (hard gate 는 여전히 못 넘지만, "반박됨"과 혼동하지 않는다 — 실행기가 없어
+    #  자동 폐기되는 역설을 막기 위해 backlog 로 남긴다. 0023)
+    return "unverified", (f"obligation '{obligation}' 의 자동 실행기가 아직 없음 — "
+                          f"fail-closed: hard gate 불통과, 상태는 unverified"), \
         None, None
 
 
@@ -197,18 +254,20 @@ if __name__ == "__main__":
     assert a1["hard_gate_passed"] == expect, a1
     print(f"require(acyclic) 판정 = {a1['status']} (witness acyclic={expect} 실측과 일치)")
 
-    # (2) 미등록 기준 → type_valid 에서 첫 실패
+    # (2) 미등록 기준 → type_valid 에서 unverified (거짓이 아니라 실행기 부재 —
+    #     criteria.py 등록 후 재평가 가능한 backlog 항목)
     step_bad = from_legacy_bias({"type": "require_property",
                                  "spec": {"name": "nonexistent"}})
     a2 = verify_until_first_failure(step_bad, known_witnesses=[wit], d=2, r=3)
-    assert a2["status"] == "negative" and a2["first_failed_obligation"] == "type_valid"
-    print("미등록 기준 → type_valid 첫 실패 OK")
+    assert a2["status"] == "unverified" and a2["first_failed_obligation"] == "type_valid"
+    assert not a2["hard_gate_passed"]
+    print("미등록 기준 → unverified (REFUTED 아님, gate 불통과) OK")
 
     # (3) witness 배제 편향 → known_witness_retention 에서 반례와 함께 실패
     step_cx = from_legacy_bias({"type": "require_property",
                                 "spec": {"name": "convex_position"}})
     a3 = verify_until_first_failure(step_cx, known_witnesses=[wit], d=2, r=3)
-    assert a3["status"] == "negative"
+    assert a3["status"] == "refuted"
     assert a3["first_failed_obligation"] == "known_witness_retention"
     assert a3["counterexample_id"] and a3["counterexample"]
     print("witness 배제 편향 → retention 실패 + 기계 판독 가능한 반례 OK:",
@@ -226,14 +285,29 @@ if __name__ == "__main__":
     step_eq = new_step(kind="equivalence", claim_dsl="A iff B",
                        scope={"rank": 3}, rationale_summary="테스트")
     a5 = verify_until_first_failure(step_eq, d=2, r=3)
-    assert a5["status"] == "negative"
+    assert a5["status"] == "unverified"
+    assert not a5["hard_gate_passed"]
     assert a5["first_failed_obligation"] == "forward_implication"
     assert "fail-closed" in a5["detail"]
-    print("fail-closed OK (실행기 없는 obligation → 기각, 통과 아님)")
+    print("fail-closed OK (실행기 없는 obligation → unverified, gate 불통과)")
+
+    # (5b) 공허 통과 제거: 알려진 witness 가 없어도 소규모 witness pool 로 검사한다.
+    #     require(convex_position) 은 pool 의 witness 가 반박해야 하고(refuted),
+    #     빈 pool 상황을 흉내내면 unverified 여야 한다.
+    a6 = verify_until_first_failure(step_cx, d=2, r=3)     # witnesses 미제공
+    assert a6["status"] == "refuted"
+    assert a6["first_failed_obligation"] == "known_witness_retention"
+    assert a6["counterexample"] is not None
+    _WITNESS_POOL_CACHE[(2, 3, 40)] = []                   # pool 확보 실패 흉내
+    a7 = verify_until_first_failure(step_cx, d=2, r=3)
+    assert a7["status"] == "unverified"
+    assert "공허하게 통과" in a7["detail"]
+    _WITNESS_POOL_CACHE.pop((2, 3, 40))
+    print("공허 통과 제거 OK (빈 witness → pool 검사 refuted / pool 불가 → unverified)")
 
     # (6) 결정론: 같은 입력 → 같은 출력
     assert verify_until_first_failure(step_cx, known_witnesses=[wit], d=2, r=3) == a3
     print("결정론 OK (동일 입력 → 동일 audit)")
 
     print("process_verifier core-contract assertions OK "
-          "(first-failure / fail-closed / legacy adapter / 결정론)")
+          "(first-failure / fail-closed / refuted-unverified 분리 / 공허 통과 제거 / 결정론)")
