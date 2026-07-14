@@ -99,6 +99,7 @@ k 의 bit i  ⟺  ground-set 원소 i+1 반전
 | `reorientation_sat.py` | WP2 고정-χ convex-reorientation SAT 검증기 (SAT model replay 강제, UNSAT=`VERIFIED_BY_SOLVER`) | `om_core` + z3(옵셔널) |
 | `cegis_search.py` | WP3 GP outer solver + exact CEGIS (재배향 obstruction cut 학습, cut replay 강제) + WP4 orbit-aware 열거 | `om_core`, `reorientation_sat` + z3(옵셔널) |
 | `symmetry_reduction.py` | WP4 (Z₂)^(n-1)⋊S_n exact orbit 축소 (lex-leader canonical, orbit_dedup, automorphism_count) | 표준 라이브러리 + `om_core` |
+| `research_ir.py` | WP5 typed ResearchStep IR (`research-step/v1`, kind 10종 × 필수 obligation, legacy bias 무손실 왕복) | 표준 라이브러리만 |
 | `fixtures/golden_certificate_d2_n6.json` | CI용 golden certificate (d=2, n=6, 32 obstructions) | — |
 
 핵심 계약:
@@ -162,7 +163,7 @@ verifier, GP 정의, witness 정의, upper-bound bridge theorem. 자율 루프�
 | WP2 | #39 | fixed-χ convex-reorientation SAT verifier (SAT model replay 필수, UNSAT 은 `VERIFIED_BY_SOLVER` 등급) | #38 게이트 통과 |
 | WP3 | #40 | GP outer solver + exact CEGIS (반례 ρ 를 차단하는 일반 제약 학습, learned cut replay 필수) | #39 |
 | WP4 | #41 | **구현됨** — `symmetry_reduction.py` + orbit-aware CEGIS 열거. (6,3) witness 전수 파악 3,181s→63.6s(50x), witness orbit 손실 0 전수 검증, witness isomorphism class 3개 발견 | 완료 |
-| WP5 | #42 | typed ResearchStep IR (kind별 obligation, 기존 bias type 무손실 흡수) | #38 |
+| WP5 | #42 | **구현됨** — `research_ir.py`. kind 10종 전부 obligation 보유, legacy 3종 무손실 왕복, hidden-CoT 길이 상한 | 완료 |
 | WP6 | #43 | deterministic Process Verifier (hard gate + first-failure feedback) | #42 |
 | WP6b | #44 | append-only evidence DB | #43 |
 | WP7a | #45 | rule-based step ranker (score 는 순서만, 진실 결정 금지) | #43, #44 |
