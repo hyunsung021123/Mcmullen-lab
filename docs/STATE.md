@@ -28,6 +28,27 @@ witness 는 n 에 **단조**다(볼록위치는 부분집합에 유전 → n 점
 
 ⚠ U(d) 의 출처가 미확인이다 (`questions/OPEN.md` QQ-0001 최우선). 이 값이 바뀌면 위 표가 바뀐다.
 
+## 1-B. 상시 제약 — layer OM 은 고전 Lawrence 를 포함한다 (사용자 지시)
+
+rank-2 layer family 는 고전 Lawrence OM 을 **진부분집합으로 포함**한다. 따라서
+
+> **이 class 가 기존 상한을 못 넘는 일은 원리상 없다.** n_L(m) ≤ (고전 구성의 n) = 5m−2.
+
+**모든 설계·해석은 이 전제 위에서 한다.** 실측이 이보다 나쁘게 나오면 그것은 family 의
+한계가 아니라 **우리 탐색의 결함**으로 읽어야 한다. 되짚을 곳은 탐색이지 class 가 아니다.
+
+⚠ 다만 **포함의 정확한 형태는 아직 저장소에서 확인되지 않았다** (`questions/OPEN.md`
+QQ-0003). 소박한 매장(埋葬)에는 구체적 장애가 있다: order 를 항등으로 둔 rank-2 layer 는
+χ(a,b) = t_a t_b 이므로 **부호벡터가 같은 rank-1 두 장**만 재현한다.
+서로 다른 rank-1 두 장 s_i ≠ s_{i+1} 은 t_a t_b = s_i(a)s_{i+1}(b) (모든 a<b) 를 강요해
+s_i = s_{i+1} 이 되어 버린다. 즉 매장은 **항등이 아닌 order** 를 쓰거나 혼합 rank 가
+필요할 수 있다.
+
+**즉시 쓸 수 있는 귀결**: 포함이 성립하면 **(m,n) = (3,13) 에 witness 가 반드시 존재한다**
+(고전 구성 n = 5m−2 = 13). 현재 우리 최선은 n_L(3) ≤ 15 이고 n=14 는 f=2 에서 반복 정체다.
+따라서 **(3,13) 은 탐색할 대상이 아니라 고전 구성에서 layer 로 옮겨 적을 대상이다.**
+이것이 gadget 프로그램의 홀수 base cap 을 공짜로 준다.
+
 ## 2. 확정된 사실 (전부 실측 — 재유도 금지)
 
 - **덮개 재정식화.** circuit S 의 Radon 균형은 재배향 ρ 의 **S 로의 제한**에만 의존한다
@@ -77,9 +98,9 @@ layer family 는 실현가능성이 보장되지만 공간이 좁다. 그래서 
 
 <!-- BOOTSTRAP:BEGIN -->
 
-_2026-08-11 01:42:50 자동 생성 (`scripts/session_bootstrap.py`)._
+_2026-08-11 02:13:33 자동 생성 (`scripts/session_bootstrap.py`)._
 
-**저장소**: `claude/0036-bound-improvement-infra` @ `d569dcc` · 미커밋 변경 있음
+**저장소**: `claude/0036-bound-improvement-infra` @ `50d4c80` · 미커밋 변경 있음
 
 ### 실험 워크스페이스 (exec)
 
@@ -89,14 +110,14 @@ _2026-08-11 01:42:50 자동 생성 (`scripts/session_bootstrap.py`)._
 
 ### 최근 연구 기록 (research_log.md 끝 8줄)
 
-- `cegis_d5_n12` (12,6) 덮개-CEGIS 중단 — 4라운드 f=66→56→45, 라운드당 11s→124s→1000s 로 8배씩 폭증. 6시간 예산 내 결론 불가로 판단. snapshot_id `d4f35548399c371d`. 방향을 layer 공간(상한 개선)으로 전환하며 보류. 재개하려면 대칭 파괴 절 + per-round 증대가 선행되어야 함
-- `삼중항 분해` **정리 확보**: union 의 circuit 을 삼중항 {s_2c,s_2c+1,s_2c+2} 로 제한하면 전역부호 u_c 를 빼고 **layer c 의 그 삼중항 circuit 과 동일**. 검증 circuit 7,647개 불일치 0. 유형 L/M/R/D 를 (홀수항 뒤집힘, 짝수항 뒤집힘) 쌍으로 두면 min-side 가 사슬만으로 결정됨(3,436개 대조 불일치 0). **min-side ≤ 1 인 사슬은 정확히 2m+2 개** = (2m+1개 위치) + (없음), 그리고 그 전부가 "비-D 삼중항이 최대 1개(RL 쌍 포함 2개)" 형태 → **비볼록 증명서는 m−1 개 삼중항이 동시에 축퇴해야 한다.** 이것이 중복도 갭(0 아니면 5 이상)의 구조적 원인
 - `n_L(2)=8 확정` m=2 게이지 고정 전수: n=7 에서 161,280개 전부 witness 아님(f≥4). n=8 에는 존재 → **n_L(2) = 8 = 4m**, 즉 m=2 에서 이 family 는 Larman 최적을 달성한다
 - `우선순위 전환` 목표를 "문헌 상한 개선"에서 **"rank-2 layer family 자체의 상한 n_L(m) 측정"** 으로 명시 전환(사용자 지시). n=12 단독 탐색 중단(최선 f=21, 4,440평가/1,119s, snapshot c63e4c7f64cd2835) — n_L(3) 의 상계조차 없는 상태에서 가장 어려운 점부터 치는 것은 측정에 비효율. **단조성**(witness at n ⟹ witness at n+1; family 는 삭제에 닫혀 있고 union 의 부분집합 제한이 원래 union) 에 근거해 **n=16 → 12 하강 스윕**으로 전환
 - `n_L 측정 개시` 목표를 n_L(m)=이 family 가 witness 를 담는 최소 n 의 **증가율 α** 측정으로 정식화. n_L(m)=αm+c 이면 문헌 개선 조건은 4m+c ≤ 5m−3 ⟺ **m ≥ c+3** — 즉 상수 초과는 큰 m 이 흡수한다. α<5 면 충분히 큰 m 에서 반드시 개선. 평가비용은 ≈2^(6m−1)/(2m+2) 로 **m=4 가능·m=5 경계·m≥6 불가**(재배향 2^(n−1) 이 병목)
 - `n_L(3) ≤ 15` m=3 하강 스윕(snapshot 5d20bf2ca5dd14d1): **n=16 witness(19평가/126s)**, **n=15 witness(136평가/462s)** — 둘 다 om_core 확인 + 실현 증명서 보유. 이 프로젝트 최초의 m=3 witness. n=14 는 f=2 에서 정체 중
 - `m=2 전수 완료` (8,4) 게이지 고정 2,580,480개 전수 / 839s (3,077개/초 — `lawrence_union_chirotope` 의 is_valid 게이트를 우회하고 χ(a<b<c<d)=χ₁(c,d) 로 직접 구성해 6.5배 가속). **witness 64,512개 = 정확히 2.500%**. layer1 음부호 개수 분포가 1:5:10:10:5:1 (=C(5,k)) 로 정확히 이항
 - `m=2 구조` witness 중 **layer1 의 order 도 항등인 것이 16개**. 이때 union 은 χ(a<b<c<d)=s_c s_d 로 부호벡터 하나가 전부를 결정하고, 조건이 완전히 factorize 된다: **s_2..s_5 가 교대(2가지) × s_1 자유(2) × s_6,s_7 자유(4) = 16**. 즉 "가운데 블록 교대 + 양 끝 2개씩 자유". n=7 에는 witness 가 없으므로 이 조건이 일반 n 으로 그대로 확장되지는 않는다 — 확장형은 반증 대상(다음 라운드)
+- `상시제약` **layer OM 은 고전 Lawrence 를 proper 포함**(사용자 지시) → n_L(m) ≤ 5m−2 가 원리상 보장되므로 **이 class 가 기존 상한을 못 넘는 일은 없다.** 실측이 그보다 나쁘면 family 가 아니라 **탐색의 결함**으로 읽는다(`docs/STATE.md` §1-B). 귀결: **(3,13) 에 witness 가 반드시 존재** — 탐색 대상이 아니라 고전 구성을 layer 로 옮겨 적을 대상이며, 그것이 gadget 귀납의 홀수 base cap 을 공짜로 준다. 소박한 매장의 장애(항등 order 인 rank-2 는 부호벡터가 같은 rank-1 두 장만 재현)는 QQ-0003 로 상향
+- `gadget 제안 검토` `knowledge/finite_gadget_induction.md` (Codex+사용자) 읽음. §2 가 우리 삼중항 분해와 독립 일치. 핵심 가치는 **무한 문제를 유한 판정으로 환원**하는 것. 최소화 대상은 (k,q) 가 아니라 **q/k** 하나이고(계수 = q/2k: 현재 5→2.5, 목표 4.5→2.25, Larman 4→2), §10 대로 signature 그래프의 **최소 평균 사이클**(Karp)로 데이터에서 추출해야 한다. 위험 3: (PG) 는 멱집합 전수가 아니라 **고정점 계산**·확장규칙은 "ground order 끝에 붙이기"로 구체화 가능(제한 보존 확인됨)·무한 family 실현가능성이 최약 고리
 
 ### 확보된 산출물
 
@@ -115,6 +136,7 @@ _2026-08-11 01:42:50 자동 생성 (`scripts/session_bootstrap.py`)._
 | `HI-0002` | INTEGRATED | PROVEN | minimum interval map과 circuit-defect lower e |
 | `HI-0003` | TESTING | CONJECTURE | layer minimum interval map composition 휴리스틱 |
 | `HI-0004` | SUPPORTED | NUMERICAL | 블록·원소별 계수로 Lawrence union을 명시적으로 실현 |
+| `HI-0005` | FORMALIZED | CONJECTURE | rank-2 Lawrence의 유한 boundary-state gadget 귀납 |
 
 ### 열린 자문 질문 (questions/OPEN.md)
 
