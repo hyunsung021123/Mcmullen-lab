@@ -234,6 +234,8 @@ def _run_obligation(obligation: str, step: dict, legacy: Optional[dict],
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     import json
     from research_ir import from_legacy_bias, new_step
 

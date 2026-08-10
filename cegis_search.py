@@ -108,7 +108,7 @@ class GPOuterSolver:
         self.solver.add(z3.Or([self.x[s] != ch.signs[s] for s in self.subs]))
 
     def add_reorientation_obstruction_cut(self, flip: frozenset):
-        """재배향 ρ(=flip 집합)를 차단하는 일반 cut:
+        r"""재배향 ρ(=flip 집합)를 차단하는 일반 cut:
         ∨_S [ npos_S(x, ρ) ≤ 1 ∨ npos_S(x, ρ) ≥ |S|-1 ].
 
         S 가 정렬돼 있으면 S\{s_i} 도 정렬돼 있으므로 χ(S\{s_i}) = x[S\{s_i}] 그대로이고,
@@ -349,6 +349,8 @@ def naive_z3_find_witness(n: int, r: int, *, max_models: int = 100_000) -> dict:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     if z3 is None:
         print("SKIP: z3-solver 미설치 — CEGIS 자체 테스트를 건너뜀")
         sys.exit(0)

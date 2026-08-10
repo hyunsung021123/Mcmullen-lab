@@ -89,6 +89,8 @@ def top_k_pass_rate(ranked: list, k: int, verify_fn) -> float:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     from research_ir import from_legacy_bias
     from process_verifier import verify_until_first_failure
 

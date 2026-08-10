@@ -3,8 +3,6 @@
 
 # --- 설정 파일(YAML) 및 대시보드 ---
 pyyaml>=6.0          # config.yaml 사용 (run.py)
-streamlit>=1.33      # 결과/기준 UI (dashboard.py)
-pandas>=2.0          # 대시보드 표/차트
 
 # --- 대규모 탐색용 SMT 백엔드 (backend: z3) ---
 z3-solver>=4.12      # GP 제약을 SMT 로 인코딩해 chirotope 열거

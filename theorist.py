@@ -350,6 +350,8 @@ def run_debate_ir(d: int, r: int, *, verified_facts: list, findings: list,
             "malformed": malformed, "transcript": transcript}
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     import random
     from om_core import mcmullen_evaluate
     random.seed(3); wit = None

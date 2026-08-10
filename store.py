@@ -10,7 +10,7 @@ store.py — 결과/근거(provenance) 저장소.
   rounds  : 라운드별 통계 + 그 라운드에 '검증 통과로 승격된' LLM 편향
 """
 from __future__ import annotations
-import json, time, uuid
+import copy, json, time, uuid
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
@@ -35,6 +35,7 @@ class ResultRecord:
     target_bound: Optional[int] = None
     solves_conjecture: bool = False
     promoted_biases: list[dict] = field(default_factory=list)
+    construction: Optional[dict] = None  # 구조적 generator의 재현 가능한 입력(판정에는 미사용)
     found_at: str = field(default_factory=_now)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:10])
 
@@ -74,6 +75,7 @@ class ResultsStore:
             target_bound=ev.get("target_bound"),
             solves_conjecture=bool(ev.get("solves_conjecture", False)),
             promoted_biases=list(promoted_biases or []),
+            construction=copy.deepcopy(getattr(ch, "construction", None)),
         )
         self.results.append(rec)
         return rec
@@ -111,6 +113,10 @@ class ResultsStore:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
+    import tempfile
+    from pathlib import Path
     from om_core import mcmullen_evaluate
     from criteria import CriteriaSet
     tri = Chirotope.from_points([(0, 0), (4, 0), (0, 4), (1, 1)])
@@ -119,5 +125,6 @@ if __name__ == "__main__":
     store = ResultsStore({"d": 2, "r": 3, "note": "demo"})
     store.add_result(tri, mcmullen_evaluate(tri), cs.evaluate(tri))
     store.add_round(RoundRecord(0, 1, 1, 0, None))
-    store.save("/tmp/_demo_results.json")
-    print("saved; summary =", store.to_dict()["summary"])
+    with tempfile.TemporaryDirectory() as tmp:
+        store.save(str(Path(tmp) / "_demo_results.json"))
+        print("saved; summary =", store.to_dict()["summary"])

@@ -7,6 +7,7 @@ run.py — 명령행 진입점. 설정(YAML/JSON)을 읽어 탐색 루프를 돌
   python run.py --config config.example.yaml
   python run.py --config config.example.yaml --class realizable_uniform --d 3 --n-min 8
   python run.py --config config.example.yaml --class rank2_uniform
+  python run.py --config config.example.yaml --class extended_lawrence_r2 --d 5 --n-min 12 --n-max 12
   python run.py --config config.example.yaml --llm --model qwen2.5
 """
 from __future__ import annotations
@@ -49,7 +50,8 @@ def main():
     ap = argparse.ArgumentParser(description="McMullen-OM 탐색 루프")
     ap.add_argument("--config", default="config.example.yaml")
     ap.add_argument("--out", default="results.json")
-    ap.add_argument("--class", dest="om_class", help="탐색 클래스(uniform/realizable_uniform/rank2_uniform/cyclic/...)")
+    ap.add_argument("--class", dest="om_class",
+                    help="탐색 클래스(uniform/realizable_uniform/extended_lawrence_r2/...)")
     ap.add_argument("--list-classes", action="store_true", help="사용 가능한 클래스 출력 후 종료")
     ap.add_argument("--d", type=int)
     ap.add_argument("--n-min", type=int)
@@ -121,4 +123,6 @@ def main():
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     main()

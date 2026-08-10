@@ -119,6 +119,8 @@ def find_convex_reorientation_sat(ch: Chirotope, *,
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     if z3 is None:
         print("SKIP: z3-solver 미설치 — SAT verifier 자체 테스트를 건너뜀 "
               "(pip install z3-solver 또는 pip install -e '.[z3]')")

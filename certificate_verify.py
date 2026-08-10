@@ -291,4 +291,6 @@ def _self_test() -> int:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     sys.exit(main())

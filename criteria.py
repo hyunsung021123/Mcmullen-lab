@@ -116,6 +116,26 @@ class CriterionReport:
     failed: list[str] = field(default_factory=list)      # 불성립/위반한 기준 이름들
 
 
+# 서로 논리적 부정 관계인 조건 쌍 — 둘 다 require 로 걸면 어떤 후보도 통과할 수 없다.
+# (not_reorientable_to_convex 의 predicate 는 정확히 reorientable_to_convex 의 부정이다.)
+# 0029 에서 ui_helpers.validate_experiment 로부터 이관 — 대시보드가 아니라 config 를
+# 손으로 쓰는 CLI 사용자에게도 필요한 검사이기 때문이다.
+_NEGATION_PAIRS = [("reorientable_to_convex", "not_reorientable_to_convex")]
+
+
+def check_config_consistency(items: list[dict]) -> list[str]:
+    """실행 전에 막아야 할 기준 설정 오류 목록. 비어 있으면 문제 없음."""
+    errors = []
+    mode_by_name = {c["name"]: c.get("mode", "require") for c in items}
+    for a, b in _NEGATION_PAIRS:
+        if mode_by_name.get(a) == "require" and mode_by_name.get(b) == "require":
+            errors.append(
+                f"'{a}' 와 '{b}' 를 동시에 require 로 설정했습니다 — 이 둘은 논리적으로 "
+                f"정확히 반대 조건이라 어떤 후보도 둘 다 만족할 수 없습니다 "
+                f"(탐색이 조용히 0건을 내게 됩니다).")
+    return errors
+
+
 @dataclass
 class CriteriaSet:
     """활성화된 기준들의 모음. config 에서 빌드된다."""
@@ -130,6 +150,9 @@ class CriteriaSet:
              {name: not_reorientable_to_convex, mode: target},
              {name: circuit_balance_at_least, mode: require, args: [2]}]
         """
+        problems = check_config_consistency(items)
+        if problems:
+            raise ValueError("모순된 기준 설정:\n  - " + "\n  - ".join(problems))
         built = []
         for it in items:
             name = it["name"]; mode = it.get("mode", "require"); args = it.get("args", [])
@@ -167,6 +190,8 @@ class CriteriaSet:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     # 데모: 삼각형+내부점은 acyclic 이지만 convex 가 아니고 재배향으로 convex 가능
     tri = Chirotope.from_points([(0, 0), (4, 0), (0, 4), (1, 1)])
     cs = CriteriaSet.from_config([
@@ -187,4 +212,19 @@ if __name__ == "__main__":
     assert rep.is_target_hit is False
     assert rep.satisfied == ["valid", "acyclic"]
     assert rep.failed == ["totally_cyclic", "not_reorientable_to_convex"]
-    print("core-contract assertions OK")
+
+    # 모순된 설정 차단 (0029 — ui_helpers 에서 이관). 대시보드 없이 config 를 손으로
+    # 쓰는 경우에도 '조용히 0건'이 아니라 명시적 오류가 나야 한다.
+    contradiction = [{"name": "reorientable_to_convex", "mode": "require"},
+                     {"name": "not_reorientable_to_convex", "mode": "require"}]
+    assert check_config_consistency(contradiction)
+    try:
+        CriteriaSet.from_config(contradiction)
+        raise AssertionError("모순된 기준 설정이 통과함")
+    except ValueError as e:
+        assert "논리적으로" in str(e)
+    # 한쪽만 require 이거나 mode 가 다르면 정상 통과
+    assert check_config_consistency([{"name": "reorientable_to_convex", "mode": "require"},
+                                     {"name": "not_reorientable_to_convex",
+                                      "mode": "target"}]) == []
+    print("core-contract assertions OK (모순 설정 차단 포함)")

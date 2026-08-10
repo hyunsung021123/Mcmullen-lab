@@ -50,6 +50,6 @@
 - "d=5 탐색을 위해 om_classes.py 의 lawrence 소켓에 내 REOM 생성기를 연결해줘.
   생성기 코드는 이 파일이야: (붙여넣기)"
 - "지난 실행의 memory.json 을 보고, 실패한 편향 중 재검토할 만한 게 있는지 분석해줘"
-- "dashboard.py 에 라운드별 실패 사유 히트맵을 추가해줘"
+- "research_cycle.py 의 보고서에 라운드별 실패 사유 요약을 추가해줘"
 
 Claude Code 는 `CLAUDE.md` 를 자동으로 읽으므로, 매번 신뢰 모델을 다시 설명할 필요는 없습니다.

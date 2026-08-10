@@ -84,6 +84,8 @@ class ResearchManager:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     mgr = ResearchManager(memory_path="/tmp/mgr_memory.json")
     cfg = SearchConfig(
         d=3, om_class="realizable_uniform", n_min=8, n_max=8, rounds=1,
