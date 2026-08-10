@@ -21,9 +21,13 @@ witness at n  ⟹  ν(d) ≤ n−1 이고, 알려진 상한은 U(d) = 2d + ⌊(1
 
     **n ≤ U(d) 인 witness 는 무엇이든 상한을 개선한다.**
 
-    d=5 : 개선 구간 n ∈ {12, 13}      (n=13 이면 ν(5) ≤ 12 < 13)
-    d=7 : 개선 구간 n ∈ {16, 17, 18}
-    d=9 : 개선 구간 n ∈ {20, …, 23}
+    d=5 : 개선 구간 n ∈ {12}          ← **한 점뿐이다. 개선 = Larman 증명**
+    d=7 : 개선 구간 n ∈ {16, 17}
+    d=9 : 개선 구간 n ∈ {20, 21, 22}
+    d=11: 개선 구간 n ∈ {24, …, 27}
+
+즉 **d 가 커질수록 여유가 생긴다.** d=5 는 개선하려면 곧바로 Larman 을 증명해야 하는
+가장 빡빡한 경우이고, d≥7 은 Larman 최적이 아니어도 상한을 내릴 수 있다.
 
 Larman 목표(n=2d+2)만 보던 것은 전부-아니면-전무였다. 게다가 **witness 는 n 에 단조**다:
 볼록위치는 부분집합에 유전되고 사영변환은 부분집합으로 제한되므로, n 점 witness 에 일반위치
@@ -66,21 +70,31 @@ import time
 from itertools import combinations
 
 from om_core import Chirotope, mcmullen_evaluate
-from extended_lawrence import (Rank2Layer, lawrence_union_chirotope,
-                               realize_union)
+from extended_lawrence import (Rank2Layer, alternating_rank2_layer,
+                               lawrence_union_chirotope, realize_union)
 
 
 def known_upper_bound(d: int) -> int:
-    """기존 상한 U(d) = 2d + ⌊(1+d)/2⌋.
+    """현재 문헌 최선 상한: ν(d) ≤ 2d + ⌈(d+1)/2⌉ − 1.
 
-    ※ `knowledge/known_results.md` 가 이 값을 `[출처 확인 필요]` 로 표시하고 있다.
-    원문 대조 전까지 '개선' 주장은 이 기준선에 상대적인 것임을 함께 밝혀야 한다."""
-    return 2 * d + (1 + d) // 2
+    출처 — García-Colín·Montejano·Ramírez Alfonsín, *On the number of vertices of
+    projective polytopes* (Mathematika 69, 2023; arXiv:1810.02671) 서론 식 (2):
+
+        "2d+1 ≤ ν(d) < 2d + ⌈(d+1)/2⌉"      (하한 Larman, 상한 Ramírez Alfonsín 2001)
+
+    **부등호가 강부등호(<)임에 주의한다.** 따라서 ν(d) ≤ 2d + ⌈(d+1)/2⌉ − 1 이다.
+
+    ⚠ 종전 구현은 `2d + ⌊(1+d)/2⌋` 를 상한으로 썼는데 두 군데가 틀렸다: (a) floor/ceil,
+    (b) 강부등호 −1 누락. 그 결과 기준선이 **한 칸 느슨**했고, d=5 에서 "n=13 이면 개선"
+    이라는 잘못된 결론이 나왔다. 실제로는 ν(5) ≤ 12 가 이미 알려져 있어 n=13 witness 는
+    아무것도 개선하지 않는다 (QQ-0001, DECISIONS 0037)."""
+    return 2 * d + -(-(d + 1) // 2) - 1
 
 
 def bound_gain(d: int, n: int) -> int:
-    """n 점 witness 를 찾았을 때의 상한 개선폭. >0 이면 개선, 2 면 Larman 도달."""
-    return (known_upper_bound(d) + 1) - n
+    """n 점 witness 의 상한 개선폭. witness at n ⟹ ν(d) ≤ n−1 이므로
+    개선폭 = (기존 상한) − (n−1). >0 이면 개선, ν(d)=2d+1 에 도달하면 Larman 증명이다."""
+    return known_upper_bound(d) - (n - 1)
 
 
 # ── 단락 덮개 주사 ────────────────────────────────────────────────────
@@ -141,23 +155,40 @@ def evaluate_layers(layers, stop_after: int | None = None):
 
 # ── layer 공간 ────────────────────────────────────────────────────────
 def random_layers(n: int, m: int, rng: random.Random) -> tuple:
-    out = []
-    for i in range(m):
+    """layer 0 을 alternating 으로 **게이지 고정**하고 나머지 m−1 개만 무작위로 뽑는다.
+
+    두 대칭을 쓴다. 둘 다 witness 를 보존하므로 궤도를 잃지 않는다.
+
+      · **재라벨링** σ 는 모든 layer 에 동시에 작용한다 → layer 0 의 order 를 항등으로
+        고정할 수 있다 (n! 배 축소).
+      · **모든 layer 를 같은 집합 F 로 부호반전**하면 union 의 재배향이 된다. 원소 e 는
+        basis 안에서 정확히 한 블록에만 속하므로 곱의 한 인자만 뒤집히기 때문이다
+        → layer 0 의 부호를 전부 + 로 고정할 수 있다 (2^(n−1) 배 축소).
+
+    그 결과 union 의 곱에서 χ_0 인자가 사라진다:
+
+        χ(j_0<…<j_{2m−1}) = ∏_{i≥1} χ_i(j_{2i}, j_{2i+1})
+
+    즉 **자유도는 m 개가 아니라 m−1 개**다. d=5 면 layer 3개가 아니라 2개를 탐색한다."""
+    out = [alternating_rank2_layer(n)]
+    for _ in range(m - 1):
         order = list(range(n)); rng.shuffle(order)
-        # 모든 layer 에 같은 부호반전을 가하면 union 의 재배향이 되므로 첫 layer 는
-        # 전부 + 로 게이지 고정해도 궤도를 잃지 않는다.
-        signs = [1] * n if i == 0 else [rng.choice((-1, 1)) for _ in range(n)]
-        if i and signs[0] < 0:
+        signs = [rng.choice((-1, 1)) for _ in range(n)]
+        if signs[0] < 0:
             signs = [-s for s in signs]      # 전역 반전은 rank-2 chirotope 를 안 바꾼다
         out.append(Rank2Layer(tuple(order), tuple(signs)))
     return tuple(out)
 
 
 def neighbors(layers) -> list[tuple]:
-    """단일 이동: order 의 인접 전치 + 원소 부호 뒤집기. 모든 이웃이 실현가능하다."""
+    """단일 이동: order 의 인접 전치 + 원소 부호 뒤집기. 모든 이웃이 실현가능하다.
+
+    **layer 0 은 건드리지 않는다** — 게이지로 고정돼 있고, layer 0 을 움직이는 것은
+    모든 layer 에 같은 재라벨링/재배향을 가하는 것과 같아 union 을 동치류 안에서만
+    옮긴다(f 불변). 이웃 수가 m/(m−1) 배 줄고, 그만큼 헛걸음이 사라진다."""
     out = []
     n, m = layers[0].n, len(layers)
-    for i in range(m):
+    for i in range(1, m):
         L = layers[i]
         for p in range(n - 1):
             o = list(L.order); o[p], o[p + 1] = o[p + 1], o[p]
@@ -323,10 +354,19 @@ def selftest() -> int:
               f"({t_ref/max(t_new,1e-9):.1f}배)")
 
     print("\n[2] 보상 체계 — 개선 구간이 맞게 계산되는가")
-    chk("U(5)", known_upper_bound(5), 13)
-    chk("bound_gain(5, 13) — 개선 1", bound_gain(5, 13), 1)
-    chk("bound_gain(5, 12) — Larman 도달", bound_gain(5, 12), 2)
-    chk("bound_gain(5, 14) — 개선 없음", bound_gain(5, 14), 0)
+    # 문헌 최선: nu(d) <= 2d + ceil((d+1)/2) - 1. 홀수 d 에서 (5d-1)/2 (QQ-0001)
+    chk("U(3)", known_upper_bound(3), 7)
+    chk("U(5)", known_upper_bound(5), 12)
+    chk("U(7)", known_upper_bound(7), 17)
+    chk("U(9)", known_upper_bound(9), 22)
+    chk("bound_gain(5, 12) — 유일한 개선이자 Larman 증명", bound_gain(5, 12), 1)
+    chk("bound_gain(5, 13) — 개선 아님 (ν(5) ≤ 12 는 기지)", bound_gain(5, 13), 0)
+    chk("bound_gain(7, 17) — Larman 아니어도 개선", bound_gain(7, 17), 1)
+    # 개선 구간 크기 = m − 2  (m = (d+1)/2 = layer 수). 닫힌 형식 대조.
+    for d_ in (3, 5, 7, 9, 11):
+        m_ = (d_ + 1) // 2
+        win = [x for x in range(2 * d_ + 2, 2 * d_ + 14) if bound_gain(d_, x) > 0]
+        chk(f"d={d_}: 개선 구간 크기 = m−2 = {m_ - 2}", len(win), m_ - 2)
 
     print("\n[3] d=3 보정 — n=8 에 witness 가 존재함이 알려져 있다")
     res = climb(3, 8, seed=11, budget_s=120, verbose=False)

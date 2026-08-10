@@ -27,6 +27,11 @@
 | 정리·삭제 작업 | `docs/REFACTOR_BACKLOG.md` |
 | 원문 PDF 반입 | `knowledge/papers/README.md` |
 
+**웹 검색이 필요하면**: `WebSearch` 는 US 전용이라 이 환경에서 `unavailable` 이 뜬다.
+대신 `WebFetch` 로 `https://html.duckduckgo.com/html/?q=<질의>` 를 열면 결과 목록이 그대로
+나온다. 논문 본문은 arXiv 의 `ar5iv.labs.arxiv.org/html/<id>` 가 PDF 보다 훨씬 잘 읽힌다.
+(QQ-0001 을 이 경로로 해결했다.)
+
 **ChatGPT 는 `questions/OPEN.md` 를 읽고 각 항목의 `### 답변` 절을 채운다.** 답변에는
 등급(PROVEN~SPECULATION)과 문헌 확인 수준(FULLTEXT/ABSTRACT_ONLY/SECONDHAND)을 반드시
 붙인다 — 규약은 `questions/README.md`.

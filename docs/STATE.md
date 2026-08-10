@@ -77,26 +77,26 @@ layer family 는 실현가능성이 보장되지만 공간이 좁다. 그래서 
 
 <!-- BOOTSTRAP:BEGIN -->
 
-_2026-08-10 22:44:24 자동 생성 (`scripts/session_bootstrap.py`)._
+_2026-08-11 01:42:50 자동 생성 (`scripts/session_bootstrap.py`)._
 
-**저장소**: `develop` @ `d1b1c78` · 미커밋 변경 있음
+**저장소**: `claude/0036-bound-improvement-infra` @ `d569dcc` · 미커밋 변경 있음
 
 ### 실험 워크스페이스 (exec)
 
-- 마지막 동기화: `3dd257a75c913a94` (2026-08-10 22:38:53, 파일 88개)
-- **실험 진행 중**: d=5 상한 개선: layer 공간 n 스윕 (n=13 → ν(5)≤12 개선 구간) (시작 2026-08-10 22:38:54, snapshot `3dd257a75c913a94`)
+- 마지막 동기화: `5d20bf2ca5dd14d1` (2026-08-11 01:00:00, 파일 95개)
+- **실험 진행 중**: n_L(3) 측정: m=3 하강 스윕 n=16→12 (rank-2 layer family 자체의 상한) (시작 2026-08-11 01:00:00, snapshot `5d20bf2ca5dd14d1`)
   → 이 실험이 끝나기 전에는 `sync_exec.py sync` 가 거부된다(규약 3)
 
 ### 최근 연구 기록 (research_log.md 끝 8줄)
 
-- `cegis_calib` 덮개-CEGIS 캘리브레이션 — **(5,3) UNSAT** (하한 ν(2) ≥ 5 와 일치: "없다"를 말하는 능력 검증), (6,3) SAT 1라운드, (8,4) SAT 2라운드/0.1s. 인코딩 버그 1건 수정(재배향 인덱스 k → 원소 마스크 k<<1 누락 시 절이 무효)
-- `cegis_d4_n10` **(10,5) SAT — d=4 보정 통과.** 38라운드/278절/750s, 게이지 2^10 축소. 독립 3경로 검증: om_core 전수 512개(acyclic 256, convex **0**) · mcmullen_evaluate(witness=True, implied_upper_bound=9) · reorientation_cover.evaluate_coverage(512/512 덮임). snapshot_id `10f2fae852f83720`, 기록 `cegis_witness_d4_n10.json`. **추상 OM 이므로 realizability 미확인 — ν(4) ≤ 9 를 증명하지 않는다.** 좌표탐색이 190만 회로 못 한 것을 완전 탐색이 12분에 해냈다는 것이 요점
-- `cegis_d4_n9` (9,5) UNSAT 확인 시도 — 예산 초과로 결론 미도출(중단). 본 보정은 (10,5) SAT 로 달성됐으므로 후순위로 밀었다
-- `HI-0001 감사` extended Lawrence rank-2 union class 반증 시험 — union GP 적법 328표본 위반 0, 재배향 교환 90회 불일치 0(둘 다 반증 안 됨). 그러나 **자명한 쌓기 실현이 union chirotope 를 12/12 재현 실패** → "layer 가 realizable 이므로 union 도 realizable" 에 즉각적 구성 근거 없음. `realizability` 를 `CLAIMED_UNVERIFIED` 로 강등, ledger HI-0001 을 INTEGRATED→TESTING·PROVEN→CONJECTURE. **채택은 함** — d=3 (8,4) 에서 후보 400개 중 witness 17개(4.25%, 무작위 실현가능 표집 1.6%보다 높음). 단 rank=d+1 이 짝수여야 하므로 **홀수 d 전용**(d=4 보정 불가) (DECISIONS 0034)
-- `HI-0004` **Lawrence union 명시적 실현** — 층별 상수배는 Laplace 전개상 모든 항에 ∏c_i² 가 똑같이 붙어 원리상 무력(대조군 0/10). 원소별·블록별 계수 t^(i·λ_j) 를 쓰면 연속 짝짓기 항이 유일하게 압도 → **55/55 실현 성공**((7,4)~(12,6), λ=j+1, t∈{11,101}). 새 class `extended_lawrence_r2_realized` 는 후보마다 정수 좌표 증명서를 om_core 로 대조하고 성공분만 방출(fail-closed). (8,4) 200개 중 **realizable witness 8개**, (12,6) 60개 최선 f=40. 등급: 일반 명제는 NUMERICAL, 개별 후보는 증명서로 확정 (DECISIONS 0035)
-- `layer_space` **layer 공간에 기울기가 있다** — (12,6) family f=40 에서 단일 이동 69개(인접전치 33 + 부호뒤집기 36) 전수: **7개가 하강, 최선 40→23 (한 수)**. 좌표공간(chamber 내부 f 상수, 기울기 없음)·OM 돌연변이 공간(하강 방향 전부 GP 위반)과 달리 **모든 상태가 실현 증명서를 유지**한다. 이 프로젝트에서 처음으로 쓸 수 있는 탐색 공간
-- `bound_window` 기존 상한 U=2d+⌊(1+d)/2⌋ 기준 **개선 구간**: d=5 → n∈{12,13}, d=7 → {16,17,18}, d=9 → {20..23}, d=11 → {24..28}. **n=13 witness 만으로 ν(5) ≤ 12 로 개선**된다(Larman 목표 n=12 가 아니어도). witness 는 n 에 단조(부분집합이 convex position 을 물려받으므로)라 n=13 이 엄격히 쉽다 — family 무작위 표집 실측도 n=13 최선 f=17(16표본) vs n=12 f=40(60표본). **지금까지 n=12 만 본 것이 설계 오류**
 - `cegis_d5_n12` (12,6) 덮개-CEGIS 중단 — 4라운드 f=66→56→45, 라운드당 11s→124s→1000s 로 8배씩 폭증. 6시간 예산 내 결론 불가로 판단. snapshot_id `d4f35548399c371d`. 방향을 layer 공간(상한 개선)으로 전환하며 보류. 재개하려면 대칭 파괴 절 + per-round 증대가 선행되어야 함
+- `삼중항 분해` **정리 확보**: union 의 circuit 을 삼중항 {s_2c,s_2c+1,s_2c+2} 로 제한하면 전역부호 u_c 를 빼고 **layer c 의 그 삼중항 circuit 과 동일**. 검증 circuit 7,647개 불일치 0. 유형 L/M/R/D 를 (홀수항 뒤집힘, 짝수항 뒤집힘) 쌍으로 두면 min-side 가 사슬만으로 결정됨(3,436개 대조 불일치 0). **min-side ≤ 1 인 사슬은 정확히 2m+2 개** = (2m+1개 위치) + (없음), 그리고 그 전부가 "비-D 삼중항이 최대 1개(RL 쌍 포함 2개)" 형태 → **비볼록 증명서는 m−1 개 삼중항이 동시에 축퇴해야 한다.** 이것이 중복도 갭(0 아니면 5 이상)의 구조적 원인
+- `n_L(2)=8 확정` m=2 게이지 고정 전수: n=7 에서 161,280개 전부 witness 아님(f≥4). n=8 에는 존재 → **n_L(2) = 8 = 4m**, 즉 m=2 에서 이 family 는 Larman 최적을 달성한다
+- `우선순위 전환` 목표를 "문헌 상한 개선"에서 **"rank-2 layer family 자체의 상한 n_L(m) 측정"** 으로 명시 전환(사용자 지시). n=12 단독 탐색 중단(최선 f=21, 4,440평가/1,119s, snapshot c63e4c7f64cd2835) — n_L(3) 의 상계조차 없는 상태에서 가장 어려운 점부터 치는 것은 측정에 비효율. **단조성**(witness at n ⟹ witness at n+1; family 는 삭제에 닫혀 있고 union 의 부분집합 제한이 원래 union) 에 근거해 **n=16 → 12 하강 스윕**으로 전환
+- `n_L 측정 개시` 목표를 n_L(m)=이 family 가 witness 를 담는 최소 n 의 **증가율 α** 측정으로 정식화. n_L(m)=αm+c 이면 문헌 개선 조건은 4m+c ≤ 5m−3 ⟺ **m ≥ c+3** — 즉 상수 초과는 큰 m 이 흡수한다. α<5 면 충분히 큰 m 에서 반드시 개선. 평가비용은 ≈2^(6m−1)/(2m+2) 로 **m=4 가능·m=5 경계·m≥6 불가**(재배향 2^(n−1) 이 병목)
+- `n_L(3) ≤ 15` m=3 하강 스윕(snapshot 5d20bf2ca5dd14d1): **n=16 witness(19평가/126s)**, **n=15 witness(136평가/462s)** — 둘 다 om_core 확인 + 실현 증명서 보유. 이 프로젝트 최초의 m=3 witness. n=14 는 f=2 에서 정체 중
+- `m=2 전수 완료` (8,4) 게이지 고정 2,580,480개 전수 / 839s (3,077개/초 — `lawrence_union_chirotope` 의 is_valid 게이트를 우회하고 χ(a<b<c<d)=χ₁(c,d) 로 직접 구성해 6.5배 가속). **witness 64,512개 = 정확히 2.500%**. layer1 음부호 개수 분포가 1:5:10:10:5:1 (=C(5,k)) 로 정확히 이항
+- `m=2 구조` witness 중 **layer1 의 order 도 항등인 것이 16개**. 이때 union 은 χ(a<b<c<d)=s_c s_d 로 부호벡터 하나가 전부를 결정하고, 조건이 완전히 factorize 된다: **s_2..s_5 가 교대(2가지) × s_1 자유(2) × s_6,s_7 자유(4) = 16**. 즉 "가운데 블록 교대 + 양 끝 2개씩 자유". n=7 에는 witness 가 없으므로 이 조건이 일반 n 으로 그대로 확장되지는 않는다 — 확장형은 반증 대상(다음 라운드)
 
 ### 확보된 산출물
 
