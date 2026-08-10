@@ -57,3 +57,7 @@ sweep_*/
 # scripts/sync_exec.py 가 관리한다.
 .exec_sync.json
 .exec_run.lock
+
+# 원문 PDF 는 개인 연구용 로컬 사본이다 — 서지와 확인 수준만 저장소에 남긴다.
+knowledge/papers/*.pdf
+knowledge/papers/*.djvu

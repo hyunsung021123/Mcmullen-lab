@@ -16,6 +16,21 @@
 7. **`docs/HUMAN_INSIGHT_PROTOCOL.md`** — 인간 수학 아이디어를 Claude·Codex 공통 상태로
    형식화하고 반증·구현으로 넘기는 절차.
 
+## 세션·에이전트 공통 진입점 (여기부터)
+
+| 무엇을 하려는가 | 어디를 보나 |
+|---|---|
+| 지금 상황 파악 (새 세션이면 **여기부터**) | `docs/STATE.md` — 목표·확정된 사실·**죽은 길**·진행 중 실험 |
+| 실험 이력 | `research_log.md` (한 줄 = 한 라운드) |
+| 수학 자문 질문·답변 | `questions/OPEN.md` · `questions/ANSWERED.md` |
+| 사람 insight 상태 | `knowledge/insights/ledger.jsonl` (`python insight_ledger.py list`) |
+| 정리·삭제 작업 | `docs/REFACTOR_BACKLOG.md` |
+| 원문 PDF 반입 | `knowledge/papers/README.md` |
+
+**ChatGPT 는 `questions/OPEN.md` 를 읽고 각 항목의 `### 답변` 절을 채운다.** 답변에는
+등급(PROVEN~SPECULATION)과 문헌 확인 수준(FULLTEXT/ABSTRACT_ONLY/SECONDHAND)을 반드시
+붙인다 — 규약은 `questions/README.md`.
+
 ## 절대 불변 조건 (요약 — 상세는 CLAUDE.md)
 
 "최적화"나 "리팩터링"을 이유로도 아래를 깨는 변경/제안은 자동 기각 대상입니다:
