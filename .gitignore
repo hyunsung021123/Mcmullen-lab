@@ -18,6 +18,16 @@ memory*.json
 /tmp/
 local_runs/
 
+# 실험 코퍼스만 제외한다 (수 MB). manifest.json 의 scope.how + seed 로 결정론적으로
+# 재생성되므로 기록 손실이 없다. 나머지 실험 산출물(manifest/conjectures/falsification/
+# report/hypothesis/ingest)과 prompts/·responses/·research_log.md 는 **연구 기록이므로
+# 반드시 커밋한다** — 같은 막다른 길을 다시 걷지 않기 위한 장치다.
+experiments/*/corpus.json
+
+# 같은 checkout에서 insight ledger 동시 append를 직렬화하는 런타임 잠금 파일.
+# ledger.jsonl 자체는 연구 기록이므로 반드시 커밋한다.
+knowledge/insights/*.lock
+
 # scripts/local-autopull.ps1 실행 로그. 이 파일이 gitignore 되지 않으면 스크립트가
 # 최초 실행 직후부터 자기 자신을 untracked 파일로 남겨 git status를 영구히 dirty로
 # 만들고, 그 결과 "커밋되지 않은 변경이 있어 건너뜀"이 매번 반복돼 pull이 절대
@@ -36,3 +46,14 @@ Thumbs.db
 # 테스트/캐시
 .pytest_cache/
 .mypy_cache/
+
+# 실행 산출물(exec 워크스페이스에서 생성). 핵심 구성은 nearmiss_*.json 으로,
+# 요약은 research_log.md 로 증류해 커밋하므로 원본 worker 스냅샷은 커밋하지 않는다.
+climb_*/
+sweep_*/
+*.log
+
+# main → exec 동결 스냅샷 매니페스트와 실행 잠금 (exec 쪽에만 생긴다).
+# scripts/sync_exec.py 가 관리한다.
+.exec_sync.json
+.exec_run.lock
