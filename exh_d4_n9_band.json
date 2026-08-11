@@ -1,0 +1,16 @@
+{
+ "status": "NO_WITNESS_PROVEN",
+ "d": 4,
+ "n": 9,
+ "r": 5,
+ "classical_n": null,
+ "num_states": 1048576,
+ "scanned": 1048576,
+ "complete": true,
+ "stopped_on_first": false,
+ "num_witnesses": 0,
+ "best_f": 13,
+ "witness_rate": 0.0,
+ "witnesses": [],
+ "elapsed_s": 1127.3
+}
