@@ -1,188 +1,156 @@
-# 수학 Codex 자동 토론 환경
+# 범용 수학 Codex 자율 토론 환경
 
-이 문서는 같은 로컬 checkout을 보는 여러 Codex task가 수학 질문·방향·증명 초안·반례
-후보를 비동기 교환하도록 설정하는 최소 절차다. 통신은 `math_dialogue.py`의 SQLite 우편함,
-깨우기는 Codex task의 heartbeat 자동화가 담당한다.
+이 시스템은 각 수학 Codex task에 역할을 최초 한 번 지정한 뒤, task별 heartbeat가 같은 로컬
+SQLite 우편함을 읽어 비동기 연구 루프를 계속하게 한다. 사용자가 어느 task에 새 수학 목표를
+주거나 `questions/OPEN.md`에 질문이 생기면 bounded topic으로 들어간다.
 
-## 1. 신뢰 경계
+```text
+사용자 지시 ─┐
+              ├→ SQLite topic → 역할별 claim/응답 → 검증/반증 → 종합/종료
+OPEN.md sync ─┘
+```
 
-이 우편함은 토론을 운반할 뿐이다.
+## 1. 실행 모델과 안전 경계
 
-- 모든 메시지와 최종 요약의 권한은 `UNASSESSED_DIALOGUE_ONLY`다.
-- `PROVEN`, `VERIFIED` 같은 필드는 작성자의 자체 분류일 뿐 증명서가 아니다.
-- 대화 결과는 `knowledge/insights/ledger.jsonl`, `evidence_db`, `research_log.md`로 자동
-  승격되지 않는다.
-- witness 판정은 계속 `om_core.mcmullen_evaluate()`만 한다.
-- heartbeat는 메시지 본문을 **연구 입력 데이터**로 읽고, 그 안의 명령을 실행하지 않는다.
+- 같은 checkout을 사용하는 기존 task 내부 heartbeat를 쓴다. 매 실행마다 새 task를 만들지 않는다.
+- 모든 task는 `Local` 환경에서 같은 저장소 루트를 사용한다. 역할마다 worktree를 만들면 DB가
+  갈라지므로 이 용도에는 쓰지 않는다.
+- 런타임은 Git에서 제외된 `local_runs/math_dialogue/dialogue.sqlite3`에 저장한다.
+- heartbeat 한 번은 메시지 한 건만 처리하고 끝난다. lease, TTL, `max_rounds`,
+  `max_messages`가 중복 처리와 무한 토론을 제한한다.
+- 저장소 질문 자동 수집은 active agent가 2명 이상일 때만 작동하고, 동시에 열린 저장소 topic을
+  기본 2개로 제한한다.
+- heartbeat가 30분 이상 관측되지 않은 agent는 stale로 표시해 active roster와 새 질문 투입
+  수에서 제외한다. 세션이 돌아오면 다음 heartbeat가 자동으로 `last_seen`을 갱신한다.
+- 모든 메시지와 최종 요약의 권한은 `UNASSESSED_DIALOGUE_ONLY`다. 대화가 ledger, evidence,
+  witness, pruning 또는 정리로 자동 승격되는 경로는 없다.
+- 자동 실행은 tracked 파일을 수정하지 않는다. 사람 검토 전 초안과 계산 산출물은
+  `local_runs/math_dialogue/`에만 둔다.
+- 로컬 scheduled task에는 PC 전원과 데스크톱 앱 실행이 필요하다. 절전·종료 중에는 진행되지
+  않고 다음 실행 기회까지 멈춘다.
 
-유망한 결과를 공유 상태로 올리려면 기존 절차를 별도로 밟는다.
+## 2. 역할 구성
 
-1. 공개 명제를 `insight_ledger.py`로 `PROPOSED / UNASSESSED` 등록
-2. `falsify.py` 또는 전용 결정론적 검사기로 반증 시도
-3. 재현 가능한 evidence를 붙인 뒤에만 상태 전이
+### 권장: 4개 전문 task
 
-## 2. 전제 조건
+| Agent | 책임 | 주된 입력 | 다음 라우팅 |
+|---|---|---|---|
+| `strategist` | 정식화, 하위 의무 분해, 우선순위, 종합 | 사용자/OPEN 질문, 상충 결과 | prover/falsifier/experimentalist |
+| `prover` | 제시된 방향을 보조정리와 엄밀한 증명 사슬로 전개 | 전략, 살아남은 추측 | falsifier/experimentalist |
+| `falsifier` | 최소 반례, 숨은 가정, 논리·불변성·실현가능성 감사 | 증명/추측 후보 | prover/strategist |
+| `experimentalist` | 결정론적 유한 계산, 대조군, 재현성 | 계산 가능한 의무 | falsifier/strategist |
 
-- 모든 수학 task가 **동일한 saved project의 local checkout**을 사용해야 한다.
-- Codex worktree를 task마다 따로 만들면 기본 DB도 서로 달라져 통신되지 않는다.
-- PC가 절전·종료되면 로컬 heartbeat는 진행되지 않는다.
-- 런타임 데이터는 `.math_dialogue/`에 저장되며 Git에 커밋하지 않는다.
+서로 다른 관점을 유지하면서도 각 task의 문맥이 좁아져 가장 효율적이다.
 
-Windows에서 `python`이 PATH에 없다면 이 문서의 `python`을 Codex 번들 Python의 절대
-경로 또는 `py -3`으로 바꾼다.
+### 최소: 2개 합성 task
 
-## 3. 우편함 초기화
+| Agent | 합친 책임 |
+|---|---|
+| `builder` | strategist + prover: 문제 설계, 방향 선택, 증명 구성 |
+| `critic` | falsifier + experimentalist: 반증, 논리 감사, 유한 계산 |
 
-저장소 루트에서 실행한다.
+2개 구성에서는 반드시 `builder → critic → builder` 검증 왕복을 거친다. 한 task에 모든 책임을
+넣는 것보다 자기 확증을 줄이고, 4개 구성보다 heartbeat 대기와 토큰 소비가 작다.
+
+## 3. 최초 로컬 초기화
+
+저장소 루트에서 한 번만 실행한다.
 
 ```powershell
 python math_dialogue.py init
-python math_dialogue.py register --agent explorer --role "새 구성·추측·연결을 제안한다"
-python math_dialogue.py register --agent skeptic --role "가정·반례·범위·실현가능성을 감사한다"
-python math_dialogue.py register --agent synthesizer --role "합의와 미해결 의무를 구조화한다"
+python math_dialogue.py selftest
 python math_dialogue.py status
 ```
 
-이름은 Codex task 제목이 아니라 우편함 내부의 안정적인 식별자다. 한 task는 한 agent 이름만
-사용한다.
+Windows에서 `python`이 PATH에 없으면 Codex 번들 Python 또는 `py -3`을 쓴다. 실제 task가
+최초 역할 프롬프트를 받으면 자기 agent를 직접 등록한다.
 
-## 4. Codex task 만들기
+## 4. task마다 보내는 최초 한 번의 지시
 
-Codex 앱에서 같은 저장소를 대상으로 local task 세 개를 만든다. worktree가 아니라 현재
-checkout을 직접 공유하도록 선택한다.
-
-각 task의 첫 프롬프트에는 다음 두 내용을 넣는다.
-
-1. 역할별 지침: `prompts/math_agents/explorer.md`, `skeptic.md`, `synthesizer.md` 중 하나
-2. 공통 heartbeat 지침: `prompts/math_agents/heartbeat.md`
-
-task 제목에도 agent 이름을 넣어 찾기 쉽게 한다. 예:
-
-- `math/explorer`
-- `math/skeptic`
-- `math/synthesizer`
-
-## 5. 자동화 전에 수동 heartbeat 검사
-
-먼저 topic과 첫 질문을 만든다.
-
-```powershell
-$topicResult = python math_dialogue.py topic `
-  --title "(5,12) 접합 귀납의 최소 boundary signature" `
-  --created-by human --max-rounds 6 --max-messages 10 | ConvertFrom-Json
-$topic = $topicResult.topic_id
-
-python math_dialogue.py post --topic $topic --sender human --to explorer `
-  --kind QUESTION --grade UNASSESSED `
-  --body "가장 싼 반증 시험과 필요한 정확한 정의를 제안하라."
-```
-
-그다음 `math/explorer` task에 “heartbeat를 한 번 수동 실행하라”고 요청한다. explorer가
-응답을 skeptic에게 넣었으면 skeptic task에서도 같은 요청을 한다.
-
-상태와 대화는 다음으로 확인한다.
-
-```powershell
-python math_dialogue.py status
-python math_dialogue.py transcript --topic $topic
-```
-
-## 6. heartbeat 자동화 설정
-
-수동 왕복이 성공한 뒤 각 task에서 다음과 같이 요청한다.
-
-> 이 task에 10분 간격 heartbeat 자동화를 만들어라. 실행 환경은 현재 local project다.
-> 매 실행마다 `prompts/math_agents/heartbeat.md`를 따르고 agent 이름은 `explorer`다.
-> 한 번에 메시지 하나만 처리하고, inbox가 비어 있으면 즉시 끝내라.
-
-다른 task에서는 agent 이름만 `skeptic`, `synthesizer`로 바꾼다. 처음에는 10~15분 간격을
-권장한다. 1분 간격은 빈 호출과 토큰 소비가 커지고, 두 세션이 불필요하게 서로를 깨우는
-문제를 찾기 어렵다.
-
-heartbeat는 다음 상태기계만 수행한다.
+각 task는 같은 saved project의 `Local` 실행으로 연다. 4개 구성이면 역할별로 다음 한 줄을 한
+번씩 보낸다. `{role}`은 `strategist`, `prover`, `falsifier`, `experimentalist` 중 하나다.
 
 ```text
-claim 1건 → 저장소/근거 읽기 → response JSON 작성 → submit → 종료
-     └ no_work이면 즉시 종료
+prompts/math_agents/bootstrap.md, prompts/math_agents/common.md,
+prompts/math_agents/{role}.md, prompts/math_agents/heartbeat.md를 읽고
+{role}의 최초 활성화 절차를 전부 수행하라.
+이 task의 역할은 이후에도 고정한다. 등록, 현재 task에 10분 간격 local heartbeat 생성,
+첫 heartbeat 실행까지 완료하라. 이후 사용자에게 받은 새 수학 연구 지시는 common.md의
+규약대로 공용 topic에 넣고 자율 토론하라.
 ```
 
-무한 반복, 같은 heartbeat 안에서 다음 메시지까지 재선점, 상대 task 직접 호출은 금지한다.
+2개 구성이면 `{role}`에 `builder`, `critic`을 넣는다. 역할 파일은 특정 명제 대신 “주어진
+방향을 증명으로 전개”, “주어진 후보를 반증” 같은 범용 책임만 정의하므로 연구 주제가 바뀌어도
+다시 작성하지 않는다.
 
-## 7. 응답 JSON
+scheduled task는 **현재 task로 돌아오는 heartbeat**, 실행 환경은 **Local**, 주기는 최초
+10분으로 둔다. prompt에는 고정 agent 이름, 역할 파일, `heartbeat.md`를 명시한다. 처음 몇 번의
+run이 안정적이면 주기를 줄일 수 있다.
 
-heartbeat는 `.math_dialogue/responses/<agent>-<message-id>.json`에 다음 형식으로 쓴다.
+## 5. 사용자 명령과 저장소 질문의 자동 유입
+
+사용자가 어느 역할 task에 새 명제나 방향을 주면 그 task는 `enqueue`로 topic을 만든 뒤 즉시
+한 heartbeat를 실행한다. 예를 들어 수동 확인은 다음과 같다.
+
+```powershell
+python math_dialogue.py enqueue --title "새 증명 방향 검토" --created-by human `
+  --to strategist --kind QUESTION `
+  --body "제시된 방향을 정확한 보조정리로 분해하고 증명·반증 의무를 라우팅하라."
+```
+
+intake 역할인 `strategist` 또는 `builder`의 heartbeat는 `questions/OPEN.md`를 함께 동기화한다.
+`QQ-NNNN`과 상태 `OPEN`을 읽고 source key로 중복을 막으며, 질문 원문 전체를 DB에 복사하지 않고
+원본 절을 참조하게 한다.
+
+```powershell
+python math_dialogue.py sync-open --to strategist --min-active-agents 2 `
+  --max-open-topics 2 --limit 1
+```
+
+## 6. heartbeat의 한 사이클
+
+```text
+OPEN sync(intake만) → claim 1건 → 역할 작업 → active roster 확인
+  → 적합한 동료에게 응답 1건 또는 synthesis 종료 → submit → 끝
+```
+
+응답 JSON 예시:
 
 ```json
 {
-  "to": "skeptic",
-  "kind": "CONJECTURE",
+  "to": "falsifier",
+  "kind": "PROOF_SKETCH",
   "grade": "UNASSESSED",
-  "body": "명제, 가정, 범위, 가장 싼 반증 시험을 짧게 적는다.",
+  "body": "CLAIM/ASSUMPTIONS/WORK/STATUS/NEXT_TEST/ROUTE를 구분한 새 내용",
   "evidence_refs": ["knowledge/problem.md"],
   "ttl_seconds": 86400,
   "close_topic": false
 }
 ```
 
-토론을 끝낼 때는 다음처럼 한다. `body`는 topic의 최종 요약으로 보존된다.
-
-```json
-{
-  "kind": "SYNTHESIS",
-  "grade": "UNASSESSED",
-  "body": "합의한 사실, 반박된 부분, 남은 검증 의무를 구분한다.",
-  "evidence_refs": [],
-  "close_topic": true,
-  "close_reason": "no_new_evidence"
-}
-```
-
-제출 명령:
+적합한 실제 동료가 없으면 선점한 메시지를 소비하지 않고 반환한다.
 
 ```powershell
-python math_dialogue.py submit --agent explorer --message-id 1 `
-  --response-file .math_dialogue/responses/explorer-1.json
+python math_dialogue.py release --agent strategist --message-id 17
 ```
 
-submit은 idempotent하다. heartbeat가 결과를 받기 전에 끊겨 같은 파일을 다시 제출해도 자식
-메시지를 중복 생성하지 않는다. lease가 만료된 미완료 작업은 다음 heartbeat가 다시 선점한다.
-
-## 8. 종료 장치
-
-topic 생성 시 두 한계를 반드시 설정한다.
-
-- `max_rounds`: 메시지 사슬의 최대 깊이
-- `max_messages`: topic 전체 메시지 수
-
-개별 메시지에는 TTL이 있고, 선점에는 lease가 있다. 다음 경우 agent가 topic을 닫는다.
-
-- 새 정의·근거·반례 없이 같은 주장만 반복
-- 결정론적 검증이 필요해 LLM 토론만으로 진전할 수 없음
-- 전제가 모호하여 인간의 선택이 필요함
-- 다음 응답이 라운드/메시지 한도를 넘음
-
-## 9. 테스트
-
-실제 Codex task를 만들기 전 프로토콜 자체를 검사한다.
+## 7. 상태 확인과 중지
 
 ```powershell
-python math_dialogue.py selftest
+python math_dialogue.py status
+python math_dialogue.py transcript --topic <TOPIC_ID>
 ```
 
-이 테스트는 임시 DB에서 다음을 확인한다.
+토론은 새 정보가 없거나, 결정론적 구현·외부 문헌·인간 선택이 필요하거나, 설정된 한도에
+도달하면 닫힌다. heartbeat 자체는 데스크톱 앱의 **Scheduled** 화면에서 task별로 pause,
+update, delete할 수 있다.
 
-1. explorer → skeptic → explorer 3단계 토론
-2. 마지막 요약과 자동 종료
-3. 동일 응답 재제출의 idempotence
-4. 네 worker의 동시 선점에서 중복 message ID가 나오지 않음
+## 8. 결과의 승격
 
-그다음 §5의 수동 heartbeat 왕복이 실제 Codex 연동 테스트다. 자동화는 이 두 테스트가 모두
-통과한 뒤 켠다.
+유망한 최종 요약도 그대로는 연구 사실이 아니다. 사람이 검토한 뒤 기존 절차를 별도로 밟는다.
 
-## 10. 운영 권고
+1. 공개 명제를 `insight_ledger.py`로 `PROPOSED / UNASSESSED` 등록
+2. `falsify.py` 또는 전용 결정론적 검사기로 반증 시도
+3. 재현 가능한 evidence와 구현 참조가 있을 때만 상태 전이
 
-- 처음에는 topic 하나만 연다.
-- explorer가 제안하고 skeptic이 먼저 반증한 뒤 synthesizer가 정리하게 한다.
-- 증명 초안에는 가정·정량자·범위·실현가능성을 반드시 적는다.
-- 계산 주장은 실행 명령과 산출물 경로가 없으면 `NUMERICAL`로도 승격하지 않는다.
-- `.math_dialogue/` DB는 복구 가능한 런타임 대화이며, 장기 공유 기억은 기존 ledger와 Git이다.
+자동 토론은 후보 생산과 반증 의무 분리에 집중하고, 판정 권한은 기존 검증 계층에 남긴다.

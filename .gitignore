@@ -17,7 +17,6 @@ results*.json
 memory*.json
 /tmp/
 local_runs/
-.math_dialogue/
 
 # scripts/local-autopull.ps1 실행 로그. 이 파일이 gitignore 되지 않으면 스크립트가
 # 최초 실행 직후부터 자기 자신을 untracked 파일로 남겨 git status를 영구히 dirty로

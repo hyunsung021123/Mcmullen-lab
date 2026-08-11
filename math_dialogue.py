@@ -7,17 +7,16 @@
 여러 Codex heartbeat가 같은 checkout에서 이 CLI를 호출하는 사용례를 겨냥한다. SQLite의
 ``BEGIN IMMEDIATE`` 트랜잭션으로 한 메시지를 두 세션이 동시에 선점하지 못하게 하고,
 라운드·메시지 수·TTL·lease 만료로 무한 대화를 막는다. 런타임 DB는 기본적으로
-``.math_dialogue/dialogue.sqlite3``에 있으며 Git 공유 상태가 아니다.
+``local_runs/math_dialogue/dialogue.sqlite3``에 있으며 Git 공유 상태가 아니다.
 
 빠른 시작::
 
     python math_dialogue.py init
-    python math_dialogue.py register --agent explorer --role "구성·추측 제안"
-    python math_dialogue.py register --agent skeptic --role "반례·가정 감사"
-    python math_dialogue.py topic --title "작은 범위의 접합 보조정리" --created-by human
-    python math_dialogue.py post --topic T-... --sender human --to explorer \
-        --kind QUESTION --body "가장 싼 반증 시험을 제안하라."
-    python math_dialogue.py claim --agent explorer
+    python math_dialogue.py register --agent builder --role "정식화·증명 구성"
+    python math_dialogue.py register --agent critic --role "반증·계산 감사"
+    python math_dialogue.py enqueue --title "새 증명 방향" --to builder \
+        --kind QUESTION --body "제시된 방향을 정확한 보조정리로 분해하라."
+    python math_dialogue.py claim --agent builder
 
 실제 Codex 호출 없이 프로토콜을 검사하려면 ``python math_dialogue.py selftest``를 쓴다.
 """
@@ -26,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -41,7 +41,7 @@ from typing import Any
 
 DEFAULT_DB = Path(os.environ.get(
     "MCMULLEN_MATH_DIALOGUE_DB",
-    Path(__file__).resolve().parent / ".math_dialogue" / "dialogue.sqlite3",
+    Path(__file__).resolve().parent / "local_runs" / "math_dialogue" / "dialogue.sqlite3",
 ))
 
 KINDS = {
@@ -113,7 +113,8 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 name TEXT PRIMARY KEY,
                 role TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                last_seen REAL NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS topics (
@@ -130,7 +131,8 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 final_kind TEXT,
                 final_grade TEXT,
                 final_summary TEXT,
-                final_evidence_refs TEXT NOT NULL DEFAULT '[]'
+                final_evidence_refs TEXT NOT NULL DEFAULT '[]',
+                source_key TEXT
             );
 
             CREATE TABLE IF NOT EXISTS messages (
@@ -160,6 +162,17 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 ON messages(topic_id, id);
             """
         )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(topics)")}
+        if "source_key" not in columns:
+            conn.execute("ALTER TABLE topics ADD COLUMN source_key TEXT")
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS unique_topic_source
+               ON topics(source_key) WHERE source_key IS NOT NULL"""
+        )
+        agent_columns = {row["name"] for row in conn.execute("PRAGMA table_info(agents)")}
+        if "last_seen" not in agent_columns:
+            conn.execute("ALTER TABLE agents ADD COLUMN last_seen REAL")
+            conn.execute("UPDATE agents SET last_seen=created_at WHERE last_seen IS NULL")
     return path
 
 
@@ -168,27 +181,184 @@ def register_agent(name: str, role: str, *, db_path: Path | str = DEFAULT_DB) ->
         raise ValueError("agent 이름과 role은 비어 있을 수 없음")
     init_db(db_path)
     with _db(db_path) as conn:
+        now = _now()
         conn.execute(
-            """INSERT INTO agents(name, role, active, created_at) VALUES (?, ?, 1, ?)
-               ON CONFLICT(name) DO UPDATE SET role=excluded.role, active=1""",
-            (name.strip(), role.strip(), _now()),
+            """INSERT INTO agents(name, role, active, created_at, last_seen)
+               VALUES (?, ?, 1, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET role=excluded.role, active=1,
+                   last_seen=excluded.last_seen""",
+            (name.strip(), role.strip(), now, now),
         )
 
 
 def create_topic(title: str, created_by: str, *, max_rounds: int = 6,
-                 max_messages: int = 12, db_path: Path | str = DEFAULT_DB) -> str:
+                 max_messages: int = 12, source_key: str | None = None,
+                 db_path: Path | str = DEFAULT_DB) -> str:
     if max_rounds < 1 or max_messages < 1:
         raise ValueError("max_rounds와 max_messages는 1 이상이어야 함")
     topic_id = _topic_id()
     init_db(db_path)
     with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if source_key:
+            existing = conn.execute(
+                "SELECT id FROM topics WHERE source_key=?", (source_key.strip(),)
+            ).fetchone()
+            if existing is not None:
+                conn.commit()
+                return str(existing["id"])
         conn.execute(
             """INSERT INTO topics
-               (id, title, created_by, status, max_rounds, max_messages, created_at)
-               VALUES (?, ?, ?, 'open', ?, ?, ?)""",
-            (topic_id, title.strip(), created_by.strip(), max_rounds, max_messages, _now()),
+               (id, title, created_by, status, max_rounds, max_messages, created_at,
+                source_key)
+               VALUES (?, ?, ?, 'open', ?, ?, ?, ?)""",
+            (topic_id, title.strip(), created_by.strip(), max_rounds, max_messages, _now(),
+             source_key.strip() if source_key else None),
         )
+        conn.commit()
     return topic_id
+
+
+def enqueue_work(title: str, body: str, recipient: str, *, created_by: str = "human",
+                 kind: str = "QUESTION", grade: str = "UNASSESSED",
+                 evidence_refs: list[str] | None = None, max_rounds: int = 8,
+                 max_messages: int = 12, source_key: str | None = None,
+                 db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """Create a bounded topic and its first message as one idempotent operation."""
+    init_db(db_path)
+    with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if source_key:
+                existing = conn.execute(
+                    "SELECT id FROM topics WHERE source_key=?", (source_key.strip(),)
+                ).fetchone()
+                if existing is not None:
+                    conn.commit()
+                    return {"topic_id": str(existing["id"]), "message_id": None,
+                            "status": "already_exists"}
+            if max_rounds < 1 or max_messages < 1:
+                raise ValueError("max_rounds와 max_messages는 1 이상이어야 함")
+            topic_id = _topic_id()
+            conn.execute(
+                """INSERT INTO topics
+                   (id, title, created_by, status, max_rounds, max_messages,
+                    created_at, source_key)
+                   VALUES (?, ?, ?, 'open', ?, ?, ?, ?)""",
+                (topic_id, title.strip(), created_by.strip(), max_rounds, max_messages,
+                 _now(), source_key.strip() if source_key else None),
+            )
+            message_id = _post_in_tx(
+                conn, topic_id=topic_id, sender=created_by, recipient=recipient,
+                kind=kind, grade=grade, body=body,
+                evidence_refs=evidence_refs or [], parent_id=None, round_no=1,
+                ttl_seconds=86400,
+            )
+            conn.commit()
+            return {"topic_id": topic_id, "message_id": message_id, "status": "created"}
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def _open_question_index(markdown: str) -> list[tuple[str, str]]:
+    pattern = re.compile(r"^##\s+(QQ-\d+)\s+[—-]\s+(.+)$", re.MULTILINE)
+    questions: list[tuple[str, str]] = []
+    for match in pattern.finditer(markdown):
+        question_id, header = match.groups()
+        if "상태 `OPEN`" not in header and "상태 OPEN" not in header:
+            continue
+        title = re.split(r"\s+·\s+상태\s+", header, maxsplit=1)[0].strip()
+        questions.append((question_id, title))
+    return questions
+
+
+def sync_open_questions(open_path: Path | str, recipient: str, *, min_active_agents: int = 2,
+                        max_open_topics: int = 2, limit: int = 1,
+                        stale_after_seconds: int = 1800,
+                        db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """Idempotently seed a small number of repository OPEN questions.
+
+    Only the question identifier, title, and source path enter the mailbox. Agents read the
+    current file themselves, avoiding a stale or oversized copy in SQLite.
+    """
+    path = Path(open_path)
+    if (min_active_agents < 1 or max_open_topics < 1 or limit < 1 or
+            stale_after_seconds < 1):
+        raise ValueError("min_active_agents, max_open_topics, limit, stale_after_seconds는 1 이상이어야 함")
+    markdown = path.read_text(encoding="utf-8")
+    questions = _open_question_index(markdown)
+    init_db(db_path)
+    created: list[dict[str, Any]] = []
+    with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            now = _now()
+            conn.execute(
+                "UPDATE agents SET last_seen=? WHERE name=? AND active=1",
+                (now, recipient),
+            )
+            active = conn.execute(
+                """SELECT COUNT(*) AS n FROM agents
+                   WHERE active=1 AND last_seen >= ?""",
+                (now - stale_after_seconds,),
+            ).fetchone()["n"]
+            recipient_row = conn.execute(
+                "SELECT active FROM agents WHERE name=?", (recipient,)
+            ).fetchone()
+            if recipient_row is None or not recipient_row["active"]:
+                raise KeyError(f"활성 agent가 아님: {recipient}")
+            if active < min_active_agents:
+                conn.commit()
+                return {"status": "waiting_for_peers", "active_agents": active,
+                        "required_agents": min_active_agents, "created": []}
+            open_count = conn.execute(
+                """SELECT COUNT(*) AS n FROM topics
+                   WHERE status='open' AND source_key LIKE 'questions/OPEN.md::%'"""
+            ).fetchone()["n"]
+            capacity = min(limit, max(0, max_open_topics - open_count))
+            if capacity == 0:
+                conn.commit()
+                return {"status": "open_topic_limit", "active_agents": active,
+                        "open_repository_topics": open_count, "created": []}
+            source_display = path.as_posix()
+            for question_id, title in questions:
+                source_key = f"questions/OPEN.md::{question_id}"
+                exists = conn.execute(
+                    "SELECT id FROM topics WHERE source_key=?", (source_key,)
+                ).fetchone()
+                if exists is not None:
+                    continue
+                topic_id = _topic_id()
+                conn.execute(
+                    """INSERT INTO topics
+                       (id, title, created_by, status, max_rounds, max_messages,
+                        created_at, source_key)
+                       VALUES (?, ?, 'repository_sync', 'open', 8, 12, ?, ?)""",
+                    (topic_id, f"{question_id} — {title}", _now(), source_key),
+                )
+                body = (
+                    f"저장소 공개 질문 {question_id}을 처리하라. 원문은 {source_display}의 "
+                    f"'{question_id} — {title}' 절이다. 원문의 요구 형식과 검증 방법을 읽고, "
+                    "정확한 명제·현재 근거·가장 값싼 다음 검증 의무로 분해한 뒤 적합한 다음 "
+                    "agent에게 라우팅하라. 토론 결과 자체에는 판정 권한이 없다."
+                )
+                message_id = _post_in_tx(
+                    conn, topic_id=topic_id, sender="repository_sync",
+                    recipient=recipient, kind="QUESTION", grade="UNASSESSED",
+                    body=body, evidence_refs=[source_display], parent_id=None,
+                    round_no=1, ttl_seconds=86400,
+                )
+                created.append({"question_id": question_id, "topic_id": topic_id,
+                                "message_id": message_id})
+                if len(created) >= capacity:
+                    break
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return {"status": "created" if created else "up_to_date",
+            "active_agents": active, "created": created}
 
 
 def _validate_message(kind: str, grade: str, body: str, evidence_refs: list[str]) -> None:
@@ -284,6 +454,12 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
         conn.execute("BEGIN IMMEDIATE")
         try:
             now = _now()
+            registered = conn.execute(
+                "SELECT active FROM agents WHERE name=?", (agent,)
+            ).fetchone()
+            if registered is None or not registered["active"]:
+                raise KeyError(f"활성 agent가 아님: {agent}")
+            conn.execute("UPDATE agents SET last_seen=? WHERE name=?", (now, agent))
             # 실패한 heartbeat의 lease는 다시 큐로, TTL이 지난 큐는 expired로 이동한다.
             conn.execute(
                 """UPDATE messages SET status='queued', lease_owner=NULL, lease_until=NULL
@@ -324,13 +500,34 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
             raise
 
 
+def release_message(agent: str, message_id: int, *,
+                    db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """Return an unprocessed leased message to the queue without changing its content."""
+    init_db(db_path)
+    with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            updated = conn.execute(
+                """UPDATE messages SET status='queued', lease_owner=NULL, lease_until=NULL
+                   WHERE id=? AND status='leased' AND lease_owner=?""",
+                (message_id, agent),
+            ).rowcount
+            if updated != 1:
+                raise ValueError(f"message {message_id}은 {agent}가 선점한 작업이 아님")
+            conn.commit()
+            return {"status": "released", "message_id": message_id}
+        except Exception:
+            conn.rollback()
+            raise
+
+
 def submit_response(agent: str, message_id: int, response: dict[str, Any], *,
                     db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
     """선점한 메시지를 완료하고 선택적으로 다음 메시지 하나를 만든다.
 
     response 스키마::
 
-        {"to": "skeptic", "kind": "CONJECTURE", "grade": "UNASSESSED",
+        {"to": "falsifier", "kind": "CONJECTURE", "grade": "UNASSESSED",
          "body": "...", "evidence_refs": [], "close_topic": false,
          "close_reason": ""}
 
@@ -445,7 +642,7 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
     init_db(db_path)
     with _db(db_path) as conn:
         agents = [dict(row) for row in conn.execute(
-            "SELECT name, role, active FROM agents ORDER BY name"
+            "SELECT name, role, active, last_seen FROM agents ORDER BY name"
         )]
         topics = [dict(row) for row in conn.execute(
             """SELECT t.*, COUNT(m.id) AS message_count
@@ -455,6 +652,10 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         states = {row["status"]: row["n"] for row in conn.execute(
             "SELECT status, COUNT(*) AS n FROM messages GROUP BY status"
         )}
+    freshness_cutoff = _now() - 1800
+    for agent in agents:
+        agent["fresh"] = bool(agent["active"] and agent["last_seen"] >= freshness_cutoff)
+        agent["last_seen"] = _iso(agent["last_seen"])
     for topic in topics:
         topic["created_at"] = _iso(topic["created_at"])
         topic["closed_at"] = _iso(topic["closed_at"])
@@ -478,36 +679,36 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory(prefix="math-dialogue-") as td:
         db = Path(td) / "dialogue.sqlite3"
         init_db(db)
-        register_agent("explorer", "구성·추측 제안", db_path=db)
-        register_agent("skeptic", "반례·가정 감사", db_path=db)
+        register_agent("builder", "정식화·증명 구성", db_path=db)
+        register_agent("critic", "반례·계산 감사", db_path=db)
         topic = create_topic("모의 접합 보조정리", "selftest", max_rounds=3,
                              max_messages=4, db_path=db)
-        first = post_message(topic, "human", "explorer", "QUESTION",
+        first = post_message(topic, "human", "builder", "QUESTION",
                              "작은 범위에서 반증 계획을 제안하라.", db_path=db)
-        job1 = claim_message("explorer", db_path=db)
+        job1 = claim_message("builder", db_path=db)
         assert job1 and job1["id"] == first and job1["status"] == "leased"
-        out1 = submit_response("explorer", first, {
-            "to": "skeptic", "kind": "CONJECTURE", "grade": "UNASSESSED",
+        out1 = submit_response("builder", first, {
+            "to": "critic", "kind": "CONJECTURE", "grade": "UNASSESSED",
             "body": "(n,r)=(6,3) 전수를 먼저 확인하자.", "evidence_refs": [],
         }, db_path=db)
         second = out1["reply_message_id"]
-        job2 = claim_message("skeptic", db_path=db)
+        job2 = claim_message("critic", db_path=db)
         assert job2 and job2["id"] == second and job2["round_no"] == 2
-        out2 = submit_response("skeptic", second, {
-            "to": "explorer", "kind": "CRITIQUE", "grade": "UNASSESSED",
+        out2 = submit_response("critic", second, {
+            "to": "builder", "kind": "CRITIQUE", "grade": "UNASSESSED",
             "body": "범위 내 전수와 일반 정리를 구분해야 한다.",
             "evidence_refs": ["falsify.py"],
         }, db_path=db)
         third = out2["reply_message_id"]
-        job3 = claim_message("explorer", db_path=db)
+        job3 = claim_message("builder", db_path=db)
         assert job3 and job3["id"] == third and job3["round_no"] == 3
-        stopped = submit_response("explorer", third, {
-            "to": "skeptic", "kind": "SYNTHESIS", "grade": "UNASSESSED",
+        stopped = submit_response("builder", third, {
+            "to": "critic", "kind": "SYNTHESIS", "grade": "UNASSESSED",
             "body": "전수 결과는 EXHAUSTED_ON_SCOPE로만 기록한다.",
             "evidence_refs": ["falsify.py"],
         }, db_path=db)
         assert stopped["topic_closed"] is True and stopped["stop_reason"] == "max_rounds"
-        assert submit_response("explorer", third, {}, db_path=db)["status"] == "already_submitted"
+        assert submit_response("builder", third, {}, db_path=db)["status"] == "already_submitted"
         transcript = topic_transcript(topic, db_path=db)
         assert len(transcript["messages"]) == 3
         assert transcript["topic"]["status"] == "closed"
@@ -518,7 +719,7 @@ def selftest() -> None:
         concurrency = create_topic("동시 선점", "selftest", max_rounds=1,
                                    max_messages=24, db_path=db)
         for i in range(20):
-            post_message(concurrency, "selftest", "skeptic", "QUESTION", f"q{i}",
+            post_message(concurrency, "selftest", "critic", "QUESTION", f"q{i}",
                          db_path=db)
         claimed: list[int] = []
         submission_states: list[str] = []
@@ -526,14 +727,14 @@ def selftest() -> None:
 
         def worker() -> None:
             while True:
-                item = claim_message("skeptic", lease_seconds=30, db_path=db)
+                item = claim_message("critic", lease_seconds=30, db_path=db)
                 if item is None:
                     return
                 with guard:
                     claimed.append(item["id"])
-                result = submit_response("skeptic", item["id"], {
+                result = submit_response("critic", item["id"], {
                     "close_topic": False,
-                    "to": "explorer",
+                    "to": "builder",
                     "kind": "SYNTHESIS",
                     "body": "max_rounds에서 자동 종료되어 이 본문은 방출되지 않는다.",
                 }, db_path=db)
@@ -550,7 +751,44 @@ def selftest() -> None:
         assert submission_states.count("submitted") == 1
         assert len(submission_states) == len(claimed)
 
-    print("math_dialogue selftest OK (3-round 토론, idempotence, 동시 선점 중복 0)")
+        # 사람 지시와 저장소 OPEN 질문 수집은 source_key로 중복 투입되지 않는다.
+        register_agent("strategist", "문제 정식화·라우팅·종합", db_path=db)
+        register_agent("prover", "엄밀한 증명 구성", db_path=db)
+        direct = enqueue_work(
+            "범용 직접 지시", "주어진 명제를 정식화하라.", "strategist",
+            source_key="user:test-direct", db_path=db,
+        )
+        repeated = enqueue_work(
+            "범용 직접 지시", "이 본문은 중복 생성되면 안 된다.", "strategist",
+            source_key="user:test-direct", db_path=db,
+        )
+        assert direct["status"] == "created"
+        assert repeated == {"topic_id": direct["topic_id"], "message_id": None,
+                            "status": "already_exists"}
+        leased_direct = claim_message("strategist", db_path=db)
+        assert leased_direct and leased_direct["id"] == direct["message_id"]
+        assert release_message("strategist", leased_direct["id"], db_path=db)["status"] == "released"
+        assert claim_message("strategist", db_path=db)["id"] == direct["message_id"]
+
+        open_file = Path(td) / "OPEN.md"
+        open_file.write_text(
+            "# 질문\n\n"
+            "## QQ-1001 — 첫 범용 질문 · 상태 `OPEN` · 우선순위 상\n\n### 답변\n\n"
+            "## QQ-1002 — 두 번째 범용 질문 · 상태 `OPEN` · 우선순위 중\n\n### 답변\n\n"
+            "## QQ-1003 — 닫힌 질문 · 상태 `ANSWERED`\n",
+            encoding="utf-8",
+        )
+        sync1 = sync_open_questions(open_file, "strategist", max_open_topics=2,
+                                    limit=1, db_path=db)
+        sync2 = sync_open_questions(open_file, "strategist", max_open_topics=2,
+                                    limit=1, db_path=db)
+        sync3 = sync_open_questions(open_file, "strategist", max_open_topics=2,
+                                    limit=1, db_path=db)
+        assert [row["question_id"] for row in sync1["created"]] == ["QQ-1001"]
+        assert [row["question_id"] for row in sync2["created"]] == ["QQ-1002"]
+        assert sync3["status"] == "open_topic_limit" and not sync3["created"]
+
+    print("math_dialogue selftest OK (토론, 중복방지, 동시선점, OPEN 질문 동기화)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -568,6 +806,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--created-by", default="human")
     p.add_argument("--max-rounds", type=int, default=6)
     p.add_argument("--max-messages", type=int, default=12)
+    p.add_argument("--source-key")
+
+    p = sub.add_parser("enqueue", help="topic과 첫 메시지를 한 번에 생성")
+    p.add_argument("--title", required=True)
+    p.add_argument("--created-by", default="human")
+    p.add_argument("--to", required=True)
+    p.add_argument("--kind", default="QUESTION", choices=sorted(KINDS))
+    p.add_argument("--grade", default="UNASSESSED", choices=sorted(GRADES))
+    body = p.add_mutually_exclusive_group(required=True)
+    body.add_argument("--body")
+    body.add_argument("--body-file")
+    p.add_argument("--evidence-ref", action="append", default=[])
+    p.add_argument("--max-rounds", type=int, default=8)
+    p.add_argument("--max-messages", type=int, default=12)
+    p.add_argument("--source-key")
 
     p = sub.add_parser("post", help="topic에 첫 메시지 게시")
     p.add_argument("--topic", required=True)
@@ -585,6 +838,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", required=True)
     p.add_argument("--lease-seconds", type=int, default=900)
 
+    p = sub.add_parser("release", help="처리하지 않은 선점 메시지를 큐로 반환")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--message-id", required=True, type=int)
+
     p = sub.add_parser("submit", help="선점 메시지에 JSON 응답 제출")
     p.add_argument("--agent", required=True)
     p.add_argument("--message-id", required=True, type=int)
@@ -592,6 +849,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("transcript", help="topic 전체 대화 조회")
     p.add_argument("--topic", required=True)
+    p = sub.add_parser("sync-open", help="questions/OPEN.md의 새 질문을 제한적으로 투입")
+    p.add_argument("--open-file", default="questions/OPEN.md")
+    p.add_argument("--to", default="strategist")
+    p.add_argument("--min-active-agents", type=int, default=2)
+    p.add_argument("--max-open-topics", type=int, default=2)
+    p.add_argument("--limit", type=int, default=1)
+    p.add_argument("--stale-after-seconds", type=int, default=1800)
     sub.add_parser("status", help="전체 상태 조회")
     sub.add_parser("selftest", help="실제 Codex 없이 프로토콜 자체 테스트")
     return parser
@@ -608,8 +872,16 @@ def main(argv: list[str] | None = None) -> int:
         _json_print({"registered": args.agent, "role": args.role})
     elif args.command == "topic":
         topic = create_topic(args.title, args.created_by, max_rounds=args.max_rounds,
-                             max_messages=args.max_messages, db_path=db)
+                             max_messages=args.max_messages, source_key=args.source_key,
+                             db_path=db)
         _json_print({"topic_id": topic})
+    elif args.command == "enqueue":
+        _json_print(enqueue_work(
+            args.title, _read_body(args), args.to, created_by=args.created_by,
+            kind=args.kind, grade=args.grade, evidence_refs=args.evidence_ref,
+            max_rounds=args.max_rounds, max_messages=args.max_messages,
+            source_key=args.source_key, db_path=db,
+        ))
     elif args.command == "post":
         message = post_message(
             args.topic, args.sender, args.to, args.kind, _read_body(args),
@@ -621,11 +893,19 @@ def main(argv: list[str] | None = None) -> int:
         item = claim_message(args.agent, lease_seconds=args.lease_seconds, db_path=db)
         _json_print({"status": "claimed", "message": item} if item else
                     {"status": "no_work", "message": None})
+    elif args.command == "release":
+        _json_print(release_message(args.agent, args.message_id, db_path=db))
     elif args.command == "submit":
         response = json.loads(Path(args.response_file).read_text(encoding="utf-8"))
         _json_print(submit_response(args.agent, args.message_id, response, db_path=db))
     elif args.command == "transcript":
         _json_print(topic_transcript(args.topic, db_path=db))
+    elif args.command == "sync-open":
+        _json_print(sync_open_questions(
+            args.open_file, args.to, min_active_agents=args.min_active_agents,
+            max_open_topics=args.max_open_topics, limit=args.limit,
+            stale_after_seconds=args.stale_after_seconds, db_path=db,
+        ))
     elif args.command == "status":
         _json_print(system_status(db_path=db))
     elif args.command == "selftest":

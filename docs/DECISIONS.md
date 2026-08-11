@@ -878,3 +878,26 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   heartbeat 활성화는 모의 selftest와 수동 왕복을 통과한 뒤 별도로 수행한다.
 - 영향 범위: 신규 `math_dialogue.py`, 설정 문서와 역할 프롬프트, 패키징·CI·gitignore.
   `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.
+
+## 0038 — 수학 task는 범용 역할과 기존-thread heartbeat로 자율 운영
+
+- 날짜: 2026-08-12
+- 제안자: human (최초 역할 지정 뒤 무개입 자율 토론 요청) → codex (설계·구현)
+- 관련 Issue/PR: #69 / #70
+- 결정 1 — 매 실행마다 새 task를 만드는 standalone schedule이 아니라, 각 기존 수학 task의
+  문맥을 유지하는 10분 heartbeat를 쓴다. heartbeat는 같은 local checkout에서 메시지 한 건만
+  처리한다.
+- 결정 2 — 권장 역할은 `strategist`(정식화·분해·종합), `prover`(증명 구성),
+  `falsifier`(반증·감사), `experimentalist`(결정론적 계산)다. task가 2개뿐이면 이를
+  `builder`와 `critic`으로 합치되 구성과 공격 관점은 분리한다.
+- 결정 3 — intake 역할은 active agent가 2명 이상일 때 `questions/OPEN.md`의 새 `OPEN`
+  질문을 source key로 중복 없이 한 번에 하나씩 투입한다. 동시에 열린 저장소 topic은 기본
+  2개로 제한한다. heartbeat `last_seen`이 기본 30분 넘게 갱신되지 않은 agent는 새 작업을
+  받을 active roster에서 제외한다.
+- 결정 4 — 실제 운영 경로는 이미 Git에서 제외되는
+  `local_runs/math_dialogue/dialogue.sqlite3`로 둔다. 이는 0037의 초기 `.math_dialogue/`
+  경로를 대체한다.
+- 결정 5 — 자동 task는 tracked 파일을 수정하지 않는다. 초안과 계산 산출물은 `local_runs`
+  아래에 두고, 사람이 검토한 뒤 기존 insight/evidence 절차로만 승격한다.
+- 영향 범위: `math_dialogue.py`의 idempotent enqueue·OPEN 질문 sync·lease release, 범용 역할
+  프롬프트와 운영 문서. 수학 판정·검사기 경로는 무변경.
