@@ -39,4 +39,6 @@ py-modules = [
     "research_cycle",
     # GP 돌연변이 공간 (0001-d5project 응답 채택분)
     "mutation_lab", "covering_cegis", "layer_search",
+    # 순수 rank-1 Lawrence 부호공간 (탐색 결함 보정) + 논문의 travel 기계
+    "lawrence_signs", "lawrence_travel", "lawrence_cegis",
 ]
