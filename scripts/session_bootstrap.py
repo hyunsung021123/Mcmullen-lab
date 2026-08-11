@@ -23,10 +23,14 @@ BEGIN, END = "<!-- BOOTSTRAP:BEGIN -->", "<!-- BOOTSTRAP:END -->"
 
 
 def _git(*args) -> str:
+    """git 출력을 문자열로. **인코딩을 반드시 UTF-8 로 고정한다** — Windows 기본
+    코드페이지(cp949)로 읽으면 한국어 커밋 제목에서 UnicodeDecodeError 가 나고
+    `stdout` 이 None 이 된다. 종전 호출은 전부 ASCII 만 돌려줘서 드러나지 않았다."""
     try:
-        return subprocess.run(("git", "-C", ROOT) + args, capture_output=True,
-                              text=True, timeout=20).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+        proc = subprocess.run(("git", "-C", ROOT) + args, capture_output=True,
+                              encoding="utf-8", errors="replace", timeout=20)
+        return (proc.stdout or "").strip()
+    except (OSError, subprocess.SubprocessError, ValueError):
         return ""
 
 
@@ -52,6 +56,69 @@ def insight_states() -> list[str]:
         out.append(f"| `{key}` | {rec.get('status')} | {rec.get('grade') or '—'} | "
                    f"{(rec.get('title') or '')[:44]} |")
     return out
+
+
+# 병합되면 프로젝트의 규칙·상태·판정 권한이 바뀌는 파일들. 다른 에이전트의 브랜치가
+# 이것들을 건드리면 읽기 전에 지나치면 안 된다.
+RULE_FILES = ("CLAUDE.md", "om_core.py", "COLLABORATION.md", "docs/STATE.md",
+              "docs/DECISIONS.md", "questions/OPEN.md",
+              "knowledge/insights/ledger.jsonl", "pyproject.toml")
+
+
+def sibling_work(limit: int = 8, max_age_days: int = 21) -> list[str]:
+    """**다른 에이전트의 미병합 브랜치**를 최근 순으로 보여준다.
+
+    이 저장소는 Claude·Codex·ChatGPT 가 각자 브랜치에 쌓고 PR 로 합치는 구조라
+    (`COLLABORATION.md`), 현재 브랜치의 파일만 보면 남의 작업을 통째로 놓친다.
+    실제로 2026-08-12 에 Codex 가 `codex/69-math-dialogue-mailbox` 에 올린
+    수학 토론 우편함(math_dialogue.py, 역할 프롬프트 8종)을 Claude 가 못 보고
+    같은 것을 다시 설계하려 한 사고가 있었다. 그래서 부록에 상시로 띄운다."""
+    head = _git("rev-parse", "--abbrev-ref", "HEAD")
+    raw = _git("for-each-ref", "--sort=-committerdate",
+               "--format=%(refname:short)\t%(committerdate:short)\t"
+               "%(objectname:short)\t%(committerdate:unix)\t%(subject)",
+               "refs/heads", "refs/remotes")
+    if not raw:
+        return ["- (git 정보를 읽지 못했다)"]
+    cutoff = time.time() - max_age_days * 86400
+    seen_sha: set[str] = set()
+    out: list[str] = []
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 5:
+            continue
+        name, date, sha, subject = parts[0], parts[1], parts[2], parts[4]
+        # 오래된 브랜치는 대개 squash 병합 후 남은 껍데기다(원본 커밋이 조상이 아니라
+        # 포함 검사로는 안 걸러진다). 최근성으로 자르는 편이 확실하다.
+        try:
+            if float(parts[3]) < cutoff:
+                continue
+        except ValueError:
+            pass
+        if name == head or name.endswith("/HEAD") or name in ("main", "develop"):
+            continue
+        if name.startswith("origin/") and name[7:] == head:
+            continue
+        ahead = _git("rev-list", "--count", f"HEAD..{name}")
+        if not ahead or ahead == "0":
+            continue                       # 이미 이 브랜치에 들어와 있다
+        # 통합 브랜치에 이미 들어간 것은 '남의 진행 중 작업' 이 아니라 내 브랜치가
+        # 아직 안 따라잡은 이력일 뿐이다. 그런 것까지 띄우면 정작 볼 것이 묻힌다.
+        if any(_git("rev-list", "--count", f"{base}..{name}") == "0"
+               for base in ("origin/develop", "develop", "origin/main", "main")
+               if _git("rev-parse", "--verify", "--quiet", base)):
+            continue
+        if sha in seen_sha:
+            continue                       # 로컬/원격 같은 커밋 중복 제거
+        seen_sha.add(sha)
+        touched = _git("diff", "--name-only", f"HEAD...{name}").splitlines()
+        rules = sorted({f for f in touched if f in RULE_FILES})
+        flag = f" ⚠ 규칙/상태 파일 변경: {', '.join(rules)}" if rules else ""
+        out.append(f"- `{name}` +{ahead} · {date} · `{sha}` {subject[:60]}"
+                   f" (파일 {len(touched)}개){flag}")
+        if len(out) >= limit:
+            break
+    return out or ["- 미병합 타 브랜치 없음"]
 
 
 def exec_status(exec_root: str) -> list[str]:
@@ -124,7 +191,9 @@ def render() -> str:
              f"**저장소**: `{_git('rev-parse', '--abbrev-ref', 'HEAD')}` @ "
              f"`{_git('rev-parse', '--short', 'HEAD')}`"
              f"{' · 미커밋 변경 있음' if _git('status', '--porcelain') else ''}", "",
-             "### 실험 워크스페이스 (exec)", ""]
+             "### 다른 에이전트의 미병합 작업 (먼저 읽을 것)", ""]
+    parts += sibling_work()
+    parts += ["", "### 실험 워크스페이스 (exec)", ""]
     parts += exec_status(exec_root)
     parts += ["", "### 최근 연구 기록 (research_log.md 끝 8줄)", ""]
     parts += recent_log()

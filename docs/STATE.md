@@ -157,9 +157,13 @@ layer family 는 실현가능성이 보장되지만 공간이 좁다. 그래서 
 
 <!-- BOOTSTRAP:BEGIN -->
 
-_2026-08-12 03:47:58 자동 생성 (`scripts/session_bootstrap.py`)._
+_2026-08-12 04:03:48 자동 생성 (`scripts/session_bootstrap.py`)._
 
-**저장소**: `claude/0036-bound-improvement-infra` @ `47c08e6` · 미커밋 변경 있음
+**저장소**: `claude/0036-bound-improvement-infra` @ `744b2e5` · 미커밋 변경 있음
+
+### 다른 에이전트의 미병합 작업 (먼저 읽을 것)
+
+- `codex/69-math-dialogue-mailbox` +2 · 2026-08-12 · `cfffb7d` feat: automate general math agent roles (codex) (파일 15개) ⚠ 규칙/상태 파일 변경: CLAUDE.md, docs/DECISIONS.md, pyproject.toml
 
 ### 실험 워크스페이스 (exec)
 
@@ -198,7 +202,7 @@ _2026-08-12 03:47:58 자동 생성 (`scripts/session_bootstrap.py`)._
 | `HI-0004` | SUPPORTED | NUMERICAL | 블록·원소별 계수로 Lawrence union을 명시적으로 실현 |
 | `HI-0005` | FORMALIZED | CONJECTURE | rank-2 Lawrence의 유한 boundary-state gadget 귀납 |
 | `HI-0006` | TESTING | NUMERICAL | f(d) 초가법성으로 Lawrence 상한 개선 가능성 판정 |
-| `HI-0007` | FORMALIZED | CONJECTURE | 고전 Lawrence 접합 automaton의 rank-2 gadget 전이 |
+| `HI-0007` | TESTING | CONJECTURE | 고전 Lawrence 접합 automaton의 rank-2 gadget 전이 |
 
 ### 열린 자문 질문 (questions/OPEN.md)
 

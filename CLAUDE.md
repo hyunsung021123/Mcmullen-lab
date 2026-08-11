@@ -38,9 +38,20 @@ McMullen 문제(특히 d=5, Larman 추측 f(5)=11)의 상한을 **유향 매트�
 
 ## 세션 재시작 — 여기부터 읽는다
 
-**새 세션이면 `docs/STATE.md` 를 먼저 읽는다.** 지금 무엇을 풀고 있는지, 확정된 사실,
-**다시 걷지 말아야 할 죽은 길**, 진행 중 실험이 한 장에 있다. §6 자동 부록은
-`python scripts/session_bootstrap.py` 로 갱신한다(실험을 시작·종료할 때마다).
+**새 세션이면 `python scripts/session_bootstrap.py` 를 먼저 돌리고 `docs/STATE.md` 를 읽는다.**
+순서가 중요하다 — §6 부록이 낡은 채로 읽으면 그 사이에 다른 에이전트가 등록한 insight 나
+바꾼 상태를 통째로 놓친다. 갱신은 실험을 시작·종료할 때마다도 한다.
+
+§6 의 **"다른 에이전트의 미병합 작업"** 절을 반드시 읽는다. 이 저장소는 Claude·Codex·
+ChatGPT 가 각자 브랜치에 쌓고 PR 로 합치는 구조라(`COLLABORATION.md`), **현재 브랜치의
+파일만 보면 남의 작업이 보이지 않는다.** 2026-08-12 에 Codex 가 별도 worktree 의
+`codex/69-math-dialogue-mailbox` 에 올린 수학 토론 우편함을 Claude 가 못 보고 같은 것을
+다시 설계하려 한 사고가 있었다. ⚠ 표시가 붙은 브랜치는 `CLAUDE.md`·`om_core.py`·
+`questions/`·ledger 처럼 **규칙·상태·판정 권한을 바꾸는 파일**을 건드린다는 뜻이니 먼저 본다.
+
+**소통은 양방향이다.** 다른 에이전트의 답변을 읽고 실행했으면, 그 결과를 해당
+`questions/OPEN.md` 의 QQ 아래에 회신으로 남기고 관련 `HI-NNNN` 에 evidence·implementation
+참조를 붙인다. 읽기만 하고 남기지 않으면 상대는 자기 반증계획이 실행됐는지조차 모른다.
 
 이 문서(CLAUDE.md)는 **규칙**, `docs/STATE.md` 는 **상태**, `research_log.md` 는 **이력**이다.
 셋을 섞지 않는다. 정리 대상 파일은 `docs/REFACTOR_BACKLOG.md`,
