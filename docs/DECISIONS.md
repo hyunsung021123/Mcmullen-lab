@@ -859,3 +859,22 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
   `theorist.py`의 결정론적 적대자 로직은 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0037 — 로컬 수학 Codex task 토론은 권한 없는 우편함으로 분리
+
+- 날짜: 2026-08-12
+- 제안자: human (여러 수학 Codex 세션의 자동 토론 환경 요청) → codex (구현)
+- 관련 Issue: #69
+- 결정 1 — 같은 checkout을 보는 여러 heartbeat의 간접 통신에 `math_dialogue.py` SQLite
+  우편함을 쓴다. `BEGIN IMMEDIATE` 선점, lease 만료, TTL, 최대 라운드와 최대 메시지 수로
+  동시 처리와 무한 자기대화를 제한한다.
+- 결정 2 — 우편함은 런타임 운반 계층이며 `.math_dialogue/`는 Git에서 제외한다. 장기 공유
+  기억은 계속 Git·Issue·`insight_ledger.py`·evidence DB가 담당한다.
+- 결정 3 — 모든 토론 산출물의 권한은 `UNASSESSED_DIALOGUE_ONLY`다. 메시지에 적힌 grade는
+  작성자의 자체 분류이며 evidence가 아니다. ledger 상태 전이, witness 판정, pruning,
+  실현가능성 결론으로 자동 승격하는 경로를 만들지 않는다.
+- 결정 4 — heartbeat 한 번은 메시지 하나만 `claim → 응답 파일 → submit`하고 끝낸다.
+  상대 task 직접 호출이나 같은 실행에서 연속 claim하는 구조는 금지한다. 실제 task 생성과
+  heartbeat 활성화는 모의 selftest와 수동 왕복을 통과한 뒤 별도로 수행한다.
+- 영향 범위: 신규 `math_dialogue.py`, 설정 문서와 역할 프롬프트, 패키징·CI·gitignore.
+  `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.

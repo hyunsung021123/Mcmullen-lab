@@ -56,6 +56,7 @@ certificate_export.py   certificate 번들 export — md/tex/lean/독립 replay.
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
 benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크
+math_dialogue.py        여러 로컬 수학 Codex task의 SQLite 우편함 — 토론 전용, 판정 권한 없음
 ```
 
 수정 전에 관련 모듈의 `if __name__ == "__main__":` 자체 테스트를 먼저 읽을 것 — 각 모듈에
