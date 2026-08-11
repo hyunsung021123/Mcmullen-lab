@@ -46,6 +46,9 @@ jobs:
       - name: Store self-test
         run: python store.py
 
+      - name: Math dialogue mailbox self-test
+        run: python math_dialogue.py selftest
+
       - name: Manager (research loop) self-test
         run: python manager.py
 
