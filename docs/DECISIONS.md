@@ -859,3 +859,417 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
   `theorist.py`의 결정론적 적대자 로직은 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0028 — 정리 발굴 파이프라인: 개방형 불변량 어휘 + 추측 채굴 + 반증기 + 공급자 독립 추론
+
+- 날짜: 2026-08-09
+- 제안자: human(요구사항 — "witness 생성/검증은 훌륭하나 이 단순화된 규칙에서
+  실질적인 수학적 성질을 전혀 뽑아낼 수 없다. LLM 을 활용한 정리·증명 발굴 파이프라인이
+  필요하다") → claude-code(설계·구현)
+- 배경 진단: 이 저장소가 수학적 성질을 말할 수 있는 어휘는 `discovery.invariants` 의
+  고정 5개와 `criteria.REGISTRY` 의 8개뿐이었다. **정리는 어휘보다 풍부해질 수 없으므로**
+  아무리 좋은 모델을 붙여도 새 성질이 나올 수 없는 구조였다. 이는
+  `docs/AUTONOMOUS_VERIFICATION_PIPELINE.md` §1 이 기록한 "근거 없는 n-추정으로 수렴"의
+  구조적 원인과 같다.
+
+- 결정 1 — **개방형 불변량 어휘** (`invariants.py` + `sandbox.py`): LLM 이 새 불변량을
+  파이썬 코드로 직접 제출·폐기할 수 있다(사용자 요구 방향 ①). 신뢰는 권한 분리로 지킨다:
+  불변량은 **판정 권한이 전혀 없고** 검증된 대상에 값을 붙이는 '자'일 뿐이며, 라벨
+  `witness` 는 frozen 이고, 어휘는 `criteria` 의 `target` 으로 승격되지 않는다. 따라서
+  LLM 코드가 틀려도 거짓 witness 가 생기지 않고 쓸모없는 추측이 하나 늘 뿐이다.
+  샌드박스는 AST 화이트리스트(import/while/eval/dunder/미허용 전역 금지)이고, vetting 은
+  전역성·결정성·해시가능·타입일관·비상수·비용을 검사한다.
+- 결정 2 — **내장 어휘에 궤도 전체를 보는 양 추가**: `num_tope_pairs`,
+  `num_convex_reorientations`, `convex_tope_ratio`, `tope_fraction`. witness 를 0/1 이
+  아니라 '얼마나 아슬아슬한가'로 재게 해 근접 실패(near-miss) 구조를 볼 수 있다.
+  `reorientation_cover` 의 subcube 마스크 기법을 재사용하며, 값은 (6,3) 전 표본 ×
+  전 재배향 전수 대조로 확인했다.
+- 결정 3 — **불변성 등급의 보수적 강등**: witness 는 궤도 불변인데 `acyclic`,
+  `num_singleton_circuits` 등은 대표원소에 의존한다. 이 구분을 놓치면 대표원소 성질이
+  'witness 의 특징짓기'로 잘못 승격된다. 그래서 (a) 내장 불변량은 불변성을 명시 선언하고
+  자체 테스트가 실측과의 모순을 매번 검사하며, (b) 미확인(None)은 하위 등급으로 강등한다.
+  표본 검사는 불변성을 반증할 수만 있고 확증할 수 없다는 사실을 등급 규칙에 반영했다.
+  (구현 중 `max_circuit_balance` 가 (6,3) 에서 우연히 재배향 불변으로 보이는 것을 발견해
+  선언을 철회하고 미확인으로 남겼다.)
+- 결정 4 — **추측 채굴기** (`conjecture.py`): 코퍼스에서 `(원자 논리곱) ⟹ (원자)` 형태의
+  **재평가 가능한** 명제를 뽑는다. 원자는 `{불변량, 비교연산, 값}` 이라 새 대상에 그대로
+  적용된다. 공허한 전칭·자명한 후건·같은 진리벡터의 중복은 자동 배제하고, witness 정의를
+  다시 쓴 양(`defines_label`)은 어떤 명제에도 쓰지 않는다(동어반복 차단).
+- 결정 5 — **반증기** (`falsify.py`): 채굴된 명제를 먼저 깨뜨리려 공격한다. 범위내
+  반증(`REFUTED`/`EXHAUSTED_ON_SCOPE`/`UNRESOLVED`)과 확장 시험(`EXTENDS`/
+  `FAILS_TO_EXTEND`)을 **엄격히 분리**한다 — 확장 실패는 원 명제의 반증이 아니다.
+  소진 주장의 근거를 위해 `generate_backtracking` 에 `stats` 인자를 추가했다(추가 전용,
+  기존 호출부 무변경). 반증에는 명제가 언급하는 불변량만 계산하고, 비싼 불변량을 쓰면
+  예산을 명시적으로 줄이고 그 사실을 결과에 남긴다.
+- 결정 6 — **공급자 독립 추론** (`reasoner.py`): `FileReasoner` 가 `prompts/NNNN-*.md` 를
+  쓰고 `responses/NNNN-*.md` 를 읽는다. 사람이 고급 모델 대화창에 붙여넣는 경로가
+  1급 시민이 된다(사용자 요구 방향 ②). **API 키는 어떤 경로에서도 필요 없다.**
+  기존 `theorist.ollama_chat` 은 `OllamaReasoner` 로 보존.
+- 결정 7 — **실험 provenance** (`research_cycle.py`): `experiments/run_NNNN/` 에
+  manifest(git commit·설정·범위·**실현가능성 상태**)·corpus·conjectures·falsification·
+  report·hypothesis·ingest 를 남기고 `research_log.md` 에 한 줄 요약을 append 한다.
+  corpus.json 만 gitignore(재생성 가능), 나머지는 연구 기록이므로 커밋한다.
+
+- 검토한 대안과 기각 사유:
+  - `criteria.REGISTRY` 를 LLM 이 직접 수정하게 하기 → 기각. `criteria` 는 `target` 모드로
+    witness 판정에 관여하므로, 거기에 쓰기 권한을 주면 신뢰 모델이 깨진다. 판정에 관여하지
+    않는 **별도 어휘 계층**을 새로 두는 쪽을 택했다.
+  - LLM 코드를 subprocess 로만 실행 → 기각(부분). 대량 평가에서 프로세스 생성 비용이
+    지배적이라, AST 화이트리스트 + 빈 builtins + `while` 금지 + 비용 실측으로 대체했다.
+  - 기존 `discovery.py`/`theorist.py` 를 개조 → 기각. 두 모듈은 검증된 안정 상태이고
+    기존 탐색 경로가 의존한다. 새 파이프라인은 **병행 진입점**으로 두고 기존 경로는
+    무변경으로 남겼다(`generator.py` 의 추가 전용 `stats` 인자 하나 예외).
+- 실측 (자체 테스트, LLM 불필요):
+  - (5,3) 192개 전수 → witness 0 (기존 CEGIS 기록과 일치)
+  - (6,3) 11,904개 전수, witness 비율 ≈ 84%
+  - (7,3) 과 (7,4) 가 정확히 같은 1,743,360개 — n=2d+2 에서 rank=corank 인 쌍대 구조와
+    정합 (`knowledge/known_results.md` O-1)
+  - end-to-end: LLM 의 `witness ⟹ num_tope_pairs ≥ 20` 주장이 반례와 함께 REFUTED,
+    샌드박스 위반·상수 불변량·미등록 불변량·라벨 폐기 시도가 모두 거부됨
+- 영향 범위: 신규 모듈 7개(`console`/`sandbox`/`invariants`/`conjecture`/`falsify`/
+  `reasoner`/`research_cycle`), 신규 문서 3개(`knowledge/*.md`), `generator.py` 추가 전용
+  인자 1개, `reorientation_cover.py` docstring raw 화(SyntaxWarning 제거), CLAUDE.md/
+  AGENTS.md/pyproject/.gitignore 갱신. **`om_core.py` 무변경.**
+- 남은 위험 / 후속:
+  - `om_core.mcmullen_evaluate` 의 `solves_conjecture` 는 여전히 실현가능성과 무관하게
+    참이 될 수 있다. 새 파이프라인은 `scope.realizability` 로 이를 우회해 기록하지만,
+    **근본 수정은 별도 PR 로 다뤄야 한다**(신뢰 앵커 변경이므로 단독 검토 필요).
+  - Gale 쌍대 계층은 의도적으로 미구현 — 문헌 대조 전 구현 금지
+    (`knowledge/equivalent_formulations.md` §E).
+  - d=5 로 가는 구조적 후보족 생성기는 다음 단계이며, 첫 프롬프트의 주 질문으로 넣었다.
+- 다른 참여자 리뷰 상태: pending.
+
+## 0029 — Streamlit 대시보드 제거, 대화창 CLI 운용으로 전환
+
+- 날짜: 2026-08-09
+- 제안자: human(요구사항 — "dashboard 는 내 편의를 위한 UI였는데, loop 실행을 에이전트에게
+  맡기고 현황은 대화창에서 확인하면 되니 없어도 될 것 같다. autonomous_ui 는 용도를
+  모르겠으니 확인 후 불필요하면 제거해도 된다") → claude-code(확인·구현)
+- 확인 결과: `autonomous_ui.py` 는 `dashboard.py` 의 자율 연구 탭 전용 어댑터였다 —
+  위젯 값을 `research_manager.run_autonomous_research` 인자로 옮기고 백그라운드 스레드
+  상태를 보관하는 것이 전부이며, 수학적 판정은 전혀 하지 않는다. 저장소 전체에서
+  `dashboard.py` 만이 `autonomous_ui`/`ui_helpers` 를 import 했다(전수 grep 확인).
+  즉 세 파일은 닫힌 군집이고, 대시보드를 지우면 나머지 둘은 소비자가 없다.
+- 결정 1 — `dashboard.py`, `autonomous_ui.py`, `ui_helpers.py`, `scripts/run_dashboard.bat`
+  삭제. 연구 운용은 `research_cycle.py`(연구 루프)와 `run.py`(기존 탐색 루프) CLI 로 한다.
+- 결정 2 — **UI 가 아닌 안전장치 두 개는 삭제하지 않고 코어로 이관.** 대시보드에만 있던
+  검사가 조용히 사라지면 CLI 사용자가 손해를 보기 때문이다:
+  - `ui_helpers.validate_experiment` 의 부정쌍 검사 → `criteria.check_config_consistency`
+    (+ `CriteriaSet.from_config` 에서 강제). `reorientable_to_convex` 와
+    `not_reorientable_to_convex` 를 둘 다 require 로 걸면 이제 조용히 0건이 아니라
+    명시적 `ValueError` 가 난다.
+  - `ui_helpers.feasibility_warnings` → `search.run_search` 시작 메시지. 백트래킹 +
+    d≥4 + n≥10 조합에 정성적 경고를 낸다(소요 시간은 약속하지 않는다).
+  - 나머지(표시 라벨, 종료 사유 문구, 클래스 설명문)는 README §5 / CLAUDE.md /
+    `om_classes.OMClass.note` 에 이미 같은 내용이 있어 이관하지 않았다.
+- 결정 3 — `docs/UI_ROADMAP.md` 는 **삭제하지 않고 폐기 배너**를 붙였다. 거기 적힌 UI 원칙
+  (수학 용어를 순화하지 않는다 / 신뢰 등급을 표시에서 섞지 않는다 / 예상 소요 시간을
+  약속하지 않는다)은 여전히 유효하고, 지금은 `research_cycle.py` 의 보고서와
+  `conjecture.py` 의 등급 체계가 그 역할을 이어받았다.
+- 부수 정리: `pyproject.toml` 의 `ui` extra(streamlit/pandas) 제거 및 `all` 갱신,
+  `requirements.txt` 에서 streamlit/pandas 제거, `scripts/setup.{sh,ps1}` 안내 문구 교체,
+  CI 에서 `autonomous_ui.py` 스텝 제거 + 0028 파이프라인 자체 테스트 스텝 추가,
+  README §2/§4/§6/§7/§8/§9 및 CLAUDE.md 모듈 지도·테스트 명령 갱신,
+  `docs/AI_WORKFLOW.md` §13 교체.
+- 검토한 대안과 기각 사유:
+  - 대시보드를 남기고 방치 → 기각. 920줄이 CI 와 문서에 계속 부담을 주는데 사용자가 쓰지
+    않기로 했다. 필요해지면 git 이력에서 복원하면 된다.
+  - `ui_helpers.py` 를 통째로 남기기 → 기각. 소비자가 사라진 모듈은 이후 리팩터링에서
+    "왜 있는지 모르는 코드"가 된다. 대신 가치 있는 두 함수만 코어로 이관했다.
+- 영향 범위: 삭제 4개 파일, `criteria.py`/`search.py` 에 검사 이관, 문서/패키징/CI 갱신.
+  **`om_core.py` 무변경.** 수학적 판정 경로는 전혀 건드리지 않았다.
+- 다른 참여자 리뷰 상태: pending.
+
+## 0030 — 정리 발굴 루프 신뢰 경계 보강 + 중복 계산 제거
+
+- 날짜: 2026-08-09
+- 제안자: human(저장소 구조·최적화 요청) → codex(정적 분석·계측·구현)
+- 협업 확인: 작업 전 `git fetch origin`으로 원격 `develop`을 확인했다. 현재 로컬에는
+  claude-code의 0028/0029 대규모 미커밋 변경이 있으므로 이를 보존하고, 이번 변경은
+  0028의 신규 연구 파이프라인 파일과 이 append-only 항목에 한정했다.
+- 결정 1 — LLM 불변량은 원본 `Chirotope` 대신 읽기 전용 facade를 받는다. AST 단계에서
+  속성/항목 대입을 거부하고, `signs`는 `MappingProxyType`으로 노출한다. 대표 조합 반복은
+  1,000,000개 상한을 둬 사후 비용 측정 전에 명백한 자원 폭발을 차단한다.
+- 결정 2 — LLM 불변량의 표본 불변성 검사는 반증만 할 수 있다. 반례를 못 찾은 경우
+  `True`가 아니라 `None`(미확인)을 기록하고 통과 표본 수를 별도 보존한다. 따라서 표본
+  통과만으로 `ORBIT_INVARIANT` 등급을 얻는 경로가 없다.
+- 결정 3 — `Corpus.load`가 tuple 불변량을 JSON list 그대로 복원해 재채굴이 실패하던
+  왕복 결함을 수정했다. feature 값의 list를 재귀적으로 tuple로 복원한다.
+- 결정 4 — 같은 범위·backend·예산의 여러 추측은 후보열을 한 번만 생성하고 필요한
+  feature 합집합을 한 번 계산해 동시에 반증한다. 후보 순서, 최초 반례, verdict,
+  tested 수는 기존 개별 공격과 동일하게 유지한다.
+- 결정 5 — uniform OM에서 순수 재배향 stabilizer는 1≤r<n이면 항등 하나뿐이라는 닫힌
+  형태를 사용한다. 기존 2^(n-1) 전수 구현은 목표 (12,6)에서 비싸면서 항상 1인 값을
+  계산했다. 회로/코회로/원소별 singleton 통계도 후보당 한 번만 계산해 공유한다.
+- 결정 6 — 프롬프트 예시는 증명 산출물이 아니므로 n!·2^(n-1) exact orbit 정규화를 하지
+  않는다. 이미 계산된, 수학적으로 확인된 궤도 불변 feature 지문으로 결정론적 다양성
+  표본을 고르며 이를 동형류 증명으로 표현하지 않는다.
+- 실측:
+  - 동일 8개 추측, budget 3,000: 순차 6.395s → 배치 1.466s(4.36배), 결과 완전 동일.
+  - (6,3) 후보 120개 기본 코퍼스: 0.496s → 0.066s.
+  - witness 34개 표본 선택: 5.729s → 약 0.001s.
+  - (12,6) 후보 1개 기본 불변량: 고비용 대칭을 제외한 기존 0.188s 대비 전체 0.160s.
+- 신뢰 범위: `om_core.py`, certificate 독립 검증기, `criteria.py` 판정 경로는 무변경.
+- 다른 참여자 리뷰 상태: claude-code review pending.
+
+## 0031 — 인간 수학 insight의 Claude·Codex 공동 ledger 도입
+
+- 날짜: 2026-08-10
+- 제안자: human(수학 문답과 아이디어를 탐색 효율 개선에 지속 반영하고, Claude와 Codex가
+  같은 맥락을 이해하는 체계 요청) → codex(설계·구현)
+- 문제: 기존 체계는 Git/PR/HANDOFF, 검증된 evidence, 실험 provenance는 다루지만 검증 전
+  인간 수학 아이디어의 원문·가정·범위·반증 계획·기각 이유를 보존하는 공통 계층이 없었다.
+  채팅 맥락은 다른 에이전트나 다음 세션의 공유 상태가 아니므로 유망한 insight가 유실되거나,
+  반대로 검증 전 아이디어가 조용히 pruning에 들어갈 위험이 있었다.
+- 결정 1 — `insight_ledger.py`와 `knowledge/insights/ledger.jsonl`을 도입한다. ledger는
+  append-only event JSONL이며 OS 파일 잠금으로 같은 checkout의 동시 append를 직렬화하고,
+  SHA-256 hash chain으로 과거 줄의 개찬을 탐지한다. update/delete API는 제공하지 않는다.
+- 결정 2 — insight는 `PROPOSED → FORMALIZED → TESTING → SUPPORTED/REFUTED → INTEGRATED`
+  수명주기를 갖는다. `SUPPORTED/REFUTED`에는 evidence 참조가, `INTEGRATED`에는 evidence와
+  구현 참조가 모두 필요하다. actor(human/claude/codex/chatgpt)는 권위 등급이 아니다.
+- 결정 3 — 모든 항목은 `PROVEN/VERIFIED/NUMERICAL/CONJECTURE/SPECULATION/UNASSESSED`,
+  scope, realizability, relabel/reorientation invariance, 적용 target, 반증 계획, 출처와 parent
+  insight를 명시한다. 표본 통과는 불변성 증명으로 승격하지 않는다.
+- 결정 4 — ledger는 evidence DB를 대체하지 않는다. insight는 방향과 공개 명제를 보존하고,
+  참/거짓 판정과 trust는 기존 `om_core`/`falsify`/`process_verifier`/`evidence_db`가 담당한다.
+  특히 `SUPPORTED`는 `PROVEN`과 동의어가 아니다.
+- 결정 5 — 공통 절차는 `docs/HUMAN_INSIGHT_PROTOCOL.md`에 두고 `AGENTS.md`, `CLAUDE.md`,
+  `docs/AI_WORKFLOW.md`, PR 템플릿에서 동일 문서를 가리킨다. Issue/PR/HANDOFF는 관련
+  `HI-NNNN`을 기록한다.
+- 검토한 대안:
+  - 채팅 transcript 전체 저장 → 기각. 장황하고 제공자별 형식에 의존하며 숨은 추론을
+    저장할 위험이 있다. 짧은 공개 명제와 재현 가능한 반증 계획만 저장한다.
+  - insight를 곧바로 `research_ir` 또는 `criteria`에 입력 → 기각. 모호한 아이디어와 실행 가능한
+    검증 단계, 판정 권한을 섞는다. FORMALIZED 이후에만 기존 IR/evidence 계층으로 넘긴다.
+  - 한 Markdown 표를 여러 에이전트가 직접 수정 → 기각. 동시 수정 충돌과 과거 상태 덮어쓰기
+    위험 때문에 append-only JSONL과 생성 가능한 조회 화면을 사용한다.
+- 영향 범위: 신규 `insight_ledger.py`, `docs/HUMAN_INSIGHT_PROTOCOL.md`,
+  `knowledge/insights/README.md`; 진입 문서·workflow·PR 템플릿·패키징 갱신. `om_core.py`,
+  witness 판정, certificate, 기존 evidence DB는 무변경.
+- 다른 참여자 리뷰 상태: claude-code review pending.
+
+## 0032 — 저장소 운영 규약: main = 단일 진실, exec = 동결 스냅샷
+
+**결정 (사용자 지정).**
+
+1. **main 은 항상 접근·수정이 가능하다.** 단일 진실은 언제나 main 이다.
+2. **exec 는 실험 직전에 main 과 동기화된다.** 실험은 항상 그 시점의 main 스냅샷 위에서 돈다.
+3. **실험 진행 중에는 main 이 변해도 exec 를 건드리지 않는다.**
+
+**왜.** 실행 중 코드가 바뀌면 결과의 provenance 가 깨진다. "어떤 코드에서 나온 숫자인가"를
+사후에 복원할 수 없으면 그 숫자는 연구 기록이 아니다. 동시에 규약 1 을 포기할 수도 없다 —
+실험이 6시간 도는 동안 main 을 얼려두면 협업이 멈춘다. 두 요구를 동시에 만족시키는 유일한
+방법이 **작업 사본의 동결**이다.
+
+**어떻게.** 문서가 아니라 `scripts/sync_exec.py` 로 강제한다. 규약 3 은 사람이 기억으로
+지킬 수 없다.
+
+- `sync` — main 소스를 exec 로 미러링하고 `.exec_sync.json` 매니페스트(main 커밋 SHA +
+  전 파일 sha256 + `snapshot_id`)를 남긴다. **잠금이 있으면 거부한다.**
+- `lock` / `unlock` — 실험 시작·종료. 잠금 중에는 sync 가 거부된다(규약 3).
+- `verify` — exec 가 매니페스트에서 벗어났는지(실행 중 오염) + main 이 그 뒤로 얼마나
+  앞서 있는지를 함께 보고한다.
+
+**실행 산출물 보호.** 미러링은 매니페스트 기반이라, 삭제 대상은 "직전 매니페스트에 있었는데
+지금 main 에 없는 것"뿐이다. exec 가 스스로 만든 worker 스냅샷·로그·중간 결과는 main 에
+존재한 적이 없으므로 매니페스트에도 없고 따라서 삭제되지 않는다. 자체 테스트가 이 불변을
+직접 시험한다(`python scripts/sync_exec.py selftest`).
+
+**provenance 규약.** 실험 결과에는 `snapshot_id` 를 함께 기록한다. `research_log.md` 의
+실험 줄과 `experiments/run_*/manifest.json` 이 그 대상이다.
+
+**이번 병합.** 규약 도입 시점에 main 과 exec 의 작업트리가 갈라져 있었다(같은 커밋
+`d1b1c78`/`develop` 기반, 양쪽 모두 미커밋). 파일별로 병합했다.
+
+- main 이 상위집합이던 것(유지): `AGENTS.md`, `.github/*`, `docs/AI_WORKFLOW.md`,
+  `docs/DECISIONS.md`, `.gitignore`, `invariants.py`
+- exec 가 상위집합이던 것(채택): `research_log.md`, `knowledge/known_results.md`
+- 양방향 병합: `CLAUDE.md`(insight 프로토콜 §8 + mutation_lab 항목),
+  `pyproject.toml`(insight_ledger + mutation_lab)
+- exec → main 승격: `mutation_lab.py`, `climb.py`, `sweep.py`, `nearmiss.py`,
+  `d5_project.py`, `feasibility_probe.py`, `nearmiss_d*.json`,
+  `fixtures/nearmiss_d5_f17.json`, `prompts/0001-d5project.md`,
+  `responses/0001-d5project.md`
+- 승격하지 않음(실행 산출물 → gitignore): `climb_*/`, `sweep_*/`, `*.log`
+
+## 0033 — rank-2 extended Lawrence 탐색 class + minimum interval map 옵션
+
+- 날짜: 2026-08-10
+- 제안자: human(탐색 범위 다양화를 위해 모든 layer가 rank 2인 extended Lawrence OM을
+  독립 class로 추가하고, minimum interval map은 선택적 탐구 수단으로 요청) → codex(구현)
+- 관련 insight: `HI-0001`(exact generator family), `HI-0002`(exact single-layer map),
+  `HI-0003`(conjectural composition heuristic).
+- 결정 1 — `extended_lawrence_r2`는 같은 ordered ground set 위의 signed-permutation
+  rank-2 layer `M_i`들을 Lawrence-Weinberg union으로 결합한다. 정렬된 basis
+  `j_1<...<j_2m`에서 `chi=product_i chi_i(j_{2i-1},j_{2i})`를 직접 계산한다. d=5에서는
+  세 layer가 rank-6 후보 하나를 만든다. uniform rank-2 OM은 realizable이고 이 union도
+  realizable이므로 class metadata를 `realizable=True`로 둔다.
+- 결정 2 — 임의 rank-2 좌표행렬을 단순 수직 적층해 determinant를 계산하는 별도 family는
+  이 class의 정의로 쓰지 않는다. union chirotope 공식을 직접 쓰는 편이 정확하고, 불필요한
+  좌표 크기·상쇄 문제 없이 기존 `om_core`에 바로 들어간다.
+- 결정 3 — 생성 공간은 layer별 permutation과 sign vector다. 모든 layer에 같은 원소 flip을
+  적용하면 최종 OM의 재배향 하나가 되므로 첫 layer sign vector를 모두 +로 gauge-fix한다.
+  dedup은 비싼 일반 reorientation canonicalization 대신 완성된 chirotope의 literal sign
+  sequence 중복만 제거한다. 결과에는 전체 layer tuple을 `construction` provenance로 저장한다.
+- 결정 4 — `interval_maps.py`는 ordered uniform OM의
+  `beta_k(a)=min{max(C):min(C)>=a, defect(C)<=k}`를 circuit support의 left endpoint별 최소값과
+  suffix minimum으로 계산한다. `k=0`은 cyclicity, `k=1`은 convex obstruction을 검출한다.
+  rank 2의 `beta_0`는 signed-permutation sign variation으로 circuit enumeration 없이 계산한다.
+- 결정 5 — 여러 layer map의 composition은 final rank-2m circuit compatibility/extraction
+  정리가 없으므로 `translations.py`에서 `exactness=heuristic`으로 고정한다. config의
+  `class_options.interval_heuristic`은 후보 pool의 **방출 순서만** 바꾸며 후보 제거와 witness
+  판정에는 관여하지 않는다. 기본값은 `off`다.
+- 검증:
+  - 작은 n=5,6의 무작위 rank-2 layer와 모든 gauge-fixed 재배향에서 circuit enumeration
+    beta_0와 sign-variation fast path가 완전 일치.
+  - 같은 범위에서 `beta_0(0)=sentinel iff acyclic`,
+    `beta_1(0)=sentinel iff convex_position` 차등 검사 통과.
+  - rank-4 union 예제의 모든 2^(n-1) 재배향에서 같은 두 동치 통과.
+  - layer 공통 reorientation과 final union reorientation 전수 일치, 무작위 union의
+    `om_core.is_valid()` 통과, d=5/n=12 exact evaluator 진입 확인.
+  - d=5/n=12 후보 4개 생성 계측: map off 0.0026s, 64-reorientation sampled pool ranking
+    0.0259s. exhaustive 2048 reorientations profile 1개 0.1593s(이 머신의 참고값이며 시간 보장 아님).
+- 영향 범위: 신규 `extended_lawrence.py`, `interval_maps.py`; class registry, custom class options,
+  result/certificate provenance, packaging/CI/docs. `om_core.py`의 판정 로직은 무변경.
+- 부수 수정: Windows에서도 필수 자체 테스트를 실행할 수 있도록 `search.py`/`store.py` 데모의
+  하드코딩된 `/tmp`를 `tempfile.TemporaryDirectory`로 교체했다(실제 탐색 API 동작 무변경).
+- 다른 참여자 리뷰 상태: claude-code review pending.
+
+## 0034 — extended Lawrence class 채택 + realizability 라벨 강등 (HI-0001 감사)
+
+**결정.** `extended_lawrence_r2` class 를 **채택한다.** 다만 실현가능성 주장은 미검증으로
+강등하고, 생성 경로에 fail-closed 게이트를 넣는다.
+
+**감사 결과** (`scripts/audit_extended_lawrence.py`, ledger 의 falsification_plan 을 실행하고
+두 항목을 추가).
+
+| 시험 | 결과 |
+|---|---|
+| T1 union 이 항상 GP 적법한가 (계획 1항) | (n,r) 11종 **328표본 위반 0** — 반증되지 않음 |
+| T2 layer 재배향 ↔ union 재배향 교환 (계획 2항) | 90회 **불일치 0** — 반증되지 않음 |
+| T3 '자명한 쌓기 실현'이 union 을 재현하는가 | **12/12 불일치** |
+| T4 답이 알려진 d=3 (8,4) 에서 witness 를 담는가 | 후보 400개 중 **witness 17개(4.25%)**, om_core 확인 |
+
+**왜 강등하는가.** T3 가 핵심이다. 각 layer 를 R^2 에 실현해 세로로 쌓아도 2m×2m 행렬식은
+**한 짝짓기의 곱이 아니라 Laplace 전개상 모든 짝짓기의 부호합**이므로 union chirotope 와
+일치하지 않는다. 즉 "layer 가 realizable 이므로 union 도 realizable" 에는 즉각적 구성
+근거가 없다. Lawrence–Weinberg 원문도 이 저장소가 아직 대조하지 못했다.
+
+이게 왜 중대한가 — 미검증 라벨이 결론으로 전파되는 **실제 경로가 둘** 있다.
+
+- `search.py:123` 이 `om_class_realizable` 을 결과 레코드에 저장한다
+- `certificate.py:215` 가 `construction` 을 인증서 번들에 넣는다 (md/tex/lean export 대상)
+
+따라서 이 family 에서 witness 가 나오면 `realizability: "REALIZABLE"` 이 그대로 따라가
+**ν(5) ≤ 11 을 증명한 것처럼 보이게 된다.** CLAUDE.md 불변조건 7 위반이다.
+
+**적용한 변경.**
+
+1. `extended_lawrence.py`: `"realizability"` → **`"CLAIMED_UNVERIFIED"`** + `realizability_note`
+   + `realizability_refs`. `_selftest` 가 이 값을 assert 하므로 `"REALIZABLE"` 로 되돌리는
+   회귀는 자체 테스트에서 실패한다.
+2. `extended_lawrence.py`: `lawrence_union_chirotope` 에 **`is_valid()` fail-closed 게이트**.
+   근거 — `om_core.mcmullen_evaluate` 는 GP 적법성을 확인하지 않으므로(직접 확인함),
+   비-OM 부호벡터가 들어오면 그대로 `witness: True` 를 돌려준다. T1 에서 위반이 나오지
+   않았지만 게이트 비용이 사실상 0 이고 신뢰 모델은 fail-closed 여야 한다. 위반이 나오면
+   그것은 HI-0001 의 반례이므로 layers 를 예외 메시지에 담아 보존한다.
+3. `om_classes.py`: `realizable=True` → **`False`**. 이는 "비실현임이 밝혀졌다"가 아니라
+   "아직 확립되지 않았다"는 뜻이며, `search.py` 전파를 fail-closed 로 만드는 것이 목적이다.
+4. ledger: HI-0001 을 `INTEGRATED` → **`TESTING`**, grade `PROVEN` → **`CONJECTURE`**.
+   기존 grade 는 자체 selftest 표본만을 근거로 했는데, 불변조건 6 이 "표본 검사는 반증만
+   가능하고 확증할 수 없다"고 못박고 있다.
+
+**채택하는 이유(강등에도 불구하고).** T4 가 결정적이다. d=3 (8,4) 에서 이 family 의
+**4.25%** 가 witness 다 — 같은 (8,4) 무작위 실현가능 표집의 1.6% 보다 높다. 구조적 family
+로서 실제로 작동한다. 다만 **rank=d+1 이 짝수여야 하므로 홀수 d 에서만 정의되고, d=4 에서
+보정할 수 없다** — 이 family 의 보정은 d=3 에서 해야 한다.
+
+**남은 반증 과제.** (a) Lawrence–Weinberg 원문 대조로 union validity 를 PROVEN 으로
+올릴 수 있는지, (b) 이 family 의 OM 이 실제로 realizable 인지 — 작은 (n,r) 에서 명시적
+좌표 실현을 시도하는 것이 다음 단계다. (b) 가 참으로 확인되기 전까지 이 family 의 witness 는
+ν(d) 상한을 증명하지 않는다.
+
+**`interval_maps.py` (HI-0002/0003) 는 그대로 채택한다.** 모듈 docstring 이 "map
+composition 이 McMullen 성질을 예측한다는 주장은 아직 정리가 아니므로 후보 순위를 정하는
+휴리스틱으로만 사용한다. 후보 제거와 witness 판정 권한은 없다"고 스스로 못박고 있고,
+`generate_extended_lawrence_rank2` 도 순서만 바꾸고 후보를 제거하지 않는다(opt-in, 기본 off).
+경계가 올바르게 그어져 있다.
+
+## 0035 — Lawrence union 의 명시적 실현: `extended_lawrence_r2_realized` (HI-0004)
+
+**사람 insight.** "그냥 쌓는 것만으로는 realizable 해지지 않지만, 적절한 계수를 곱하면
+realizable 하게 만들 수 있다."
+
+**유도.** w_j = (c_{0,j} v^(0)_j, …, c_{m-1,j} v^(m-1)_j) 로 쌓으면 2m×2m 행렬식은 행 블록에
+대한 **일반화 Laplace 전개**
+
+    det = Σ_{(S_0,…,S_{m-1})} ε(S) ∏_i det2_i(S_i)
+
+이고 합은 basis 를 블록마다 2개씩 나누는 **모든 순서 분할**을 훑는다. union chirotope 가 쓰는
+것은 연속 짝짓기 S_i={j_{2i+1},j_{2i+2}} **한 항**뿐이며 그 ε 는 +1 이다.
+
+- **층별 상수배는 원리상 무력하다.** 모든 항이 각 블록에서 2×2 소행렬식을 정확히 하나씩
+  가지므로 어떤 항이든 ∏ c_i² 가 똑같이 붙는다 → 부호 비교가 안 바뀐다. **0034 의 감사 T3 가
+  12/12 실패한 이유가 정확히 이것이다.**
+- **원소별·블록별 계수라야 한다.** c_{i,j} = t^{i·λ_j} 로 두면 항의 t-지수는
+  E(S) = Σ_i i·(λ_a+λ_b) 로 **원소가 어느 블록에 갔는지만** 으로 정해진다. λ 가 증가수열이면
+  재배열 부등식에 의해 E 의 최대화 배정은 "가장 큰 λ 둘 → 블록 m−1, …" 이며 이는 **연속
+  짝짓기와 정확히 같다.** t 를 키우면 그 항이 압도하므로
+  sign(det) = ∏_i χ_i(j_{2i+1},j_{2i+2}) — union 이 명시적 좌표로 실현된다.
+
+**실측** (`extended_lawrence.py::_selftest`, `scripts/audit_extended_lawrence.py`).
+
+| | 결과 |
+|---|---|
+| 유도한 계수 (λ=j+1, t∈{11,101}) | (7,4)~(12,6) 6종에서 **55/55 실현 성공** |
+| 대조군: 층별 상수배 | **0/10** — Laplace 논증과 정확히 일치 |
+| (8,4) 실현 검증 후보 200개 | **witness 8개(4%)**, 전부 증명서 재검증 통과 |
+| (12,6) 실현 검증 후보 60개 | 최선 f=40, witness 0 |
+
+**결정.** 새 class `extended_lawrence_r2_realized` 를 추가한다. 후보마다 정수 벡터 실현을
+만들어 `om_core` 로 **정확히 대조**하고 **성공한 것만 방출**한다(fail-closed). 실패한 후보는
+라벨을 낮추는 대신 **버린다** — 이 class 의 존재 이유가 realizability 보장이기 때문이다.
+
+**등급 규율.** 일반 명제(모든 이런 union 이 realizable)는 λ 동점 부재와 t 하한이 증명되지
+않았으므로 HI-0004 를 **NUMERICAL** 로 둔다. 그러나 **개별 후보의 realizability 는 추정이
+아니라 증명서**다 — 좌표가 붙어 있고 `om_core` 대조를 통과했다. 즉 class 수준 주장은
+미확정이지만 object 수준 결론은 확정이다. 이 구분이 `realizable=True` 를 붙일 수 있는 근거다.
+(기존 `extended_lawrence_r2` 는 0034 대로 `CLAIMED_UNVERIFIED` 를 유지한다.)
+
+**왜 이게 중요한가.** 덮개-CEGIS 는 **추상** OM witness 를 준다 — (10,5) SAT 이 ν(4) ≤ 9 를
+증명하지 못하는 이유가 그것이다. 이 family 는 정반대로 **실현가능성이 보장된 대신 탐색
+공간이 좁다**. (12,6) 무작위 표집이 f=40 에서 멈추는 것이 그 대가다. 따라서 다음 수는
+**이 family 안에서 탐색하는 것** — layer tuple 을 변수로 놓고 CEGIS/돌연변이 탐색을 돌리면,
+거기서 나오는 witness 는 **자동으로 정수 좌표를 동반**한다.
+
+**남은 작업.** 실현 증명서는 rank-2m **벡터**다. ν(d) 결론 문구에 쓸 R^d **정수 점배치**로
+바꾸려면 (a) acyclic 재배향 선택 → (b) 모든 벡터에 양인 선형범함수 h 탐색 → (c) h 로
+비동차화 후 분모 일괄 제거 가 필요하다. 세 단계 모두 결정론적이며 `om_core` 로 재확인
+가능하다. 미구현.
+
+## 0036 — 연구 인프라: 자문 채널 · 맥락 복원 · 정리 지시서
+
+방향을 **상한 개선**(n ≤ U(d) 인 witness 는 무엇이든 개선)으로 전환하면서, 사람이 병목이
+되지 않도록 네 가지를 세웠다.
+
+1. **`questions/`** — ChatGPT 자문 채널. `OPEN.md`(열린 질문) · `ANSWERED.md`(아카이브) ·
+   `README.md`(규약) 세 파일뿐이다. 질문마다 "왜 막혔는가 / 우리가 이미 안 것 / 요구 형식 /
+   **검증 방법**"을 강제한다. 답변에는 등급(PROVEN~SPECULATION)과 **문헌 확인 수준**
+   (FULLTEXT/ABSTRACT_ONLY/SECONDHAND)을 요구한다. 답변 자체는 아무 권한이 없고,
+   `HI-NNNN` 등록과 상태 전이를 거쳐야 탐색에 반영된다(불변조건 8).
+   긴 원문 왕복은 기존 `prompts/`·`responses/` 를 계속 쓴다.
+2. **`docs/STATE.md`** — 세션 재시작용 단일 진입점. §1~§5 는 사람/에이전트가 쓰고,
+   §6 은 `scripts/session_bootstrap.py` 가 자동 생성한다(exec 잠금 상태, 최근 research_log,
+   확보된 산출물, ledger 상태, 열린 질문). **손으로 쓰는 상태 문서는 반드시 낡기 때문에**
+   기계가 알 수 있는 것은 기계가 쓰게 했다. §3 "죽은 길"이 이 문서의 핵심 — 맥락 복원에서
+   가장 비싼 실수는 이미 폐기된 경로를 다시 걷는 것이다.
+3. **`docs/REFACTOR_BACKLOG.md`** — Codex 가 그것만 읽고 작업할 수 있는 정리 지시서.
+   §0 에 **절대 건드리면 안 되는 신뢰 앵커**를 먼저 못박았다(특히 `certificate_verify.py` 의
+   "중복처럼 보이는 독립성"). 삭제 후보마다 근거와 **잃는 것**을 적었고, 작업 순서와 완료
+   조건(자체 테스트 전부 통과 + DECISIONS append)을 규정했다.
+4. **`CLAUDE.md` 최상단에 재시작 진입점** 추가 — 규칙(CLAUDE.md) / 상태(STATE.md) /
+   이력(research_log.md) 의 역할 분리를 명시.
+
+**우선순위 상 발견 하나를 backlog 에 올렸다**: `om_core.mcmullen_evaluate` 가 `is_valid()` 를
+거치지 않아, 비-OM 부호벡터를 넣으면 그대로 `witness: True` 를 돌려준다. 현재는 호출부마다
+개별로 막고 있다. 신뢰 앵커 수정이라 자체 테스트 확장과 함께 처리해야 한다(REFACTOR §2-A).

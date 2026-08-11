@@ -161,6 +161,8 @@ def orbit_images(ch: Chirotope, *, gauge_fixed: bool = True) -> list[dict]:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     import time
     from generator import generate_backtracking
 

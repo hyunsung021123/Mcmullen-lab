@@ -13,7 +13,25 @@
 
 | Issue | 작업 | 담당 | 브랜치 | 상태 | 마지막 갱신 |
 |---|---|---|---|---|---|
+| #69 | 수학 Codex 토론 우편함 + 역할 자동화 | codex | codex/69-math-dialogue-mailbox | review | 2026-08-12 |
+| — | f 초가법성 / 접합 귀납 (HI-0006·HI-0007) | claude | claude/0036-bound-improvement-infra | active | 2026-08-12 |
 | #16 | GP 관계 테이블 컴파일 캐싱 | codex | codex/16-cache-compile-relations | review | 2026-07-12 |
+
+### 교차 리뷰 — `codex/69-math-dialogue-mailbox` (claude, 2026-08-12)
+
+`math_dialogue.py`(921줄) + 역할 프롬프트 8종 + `docs/MATH_CODEX_DIALOGUE.md`.
+별도 worktree 에 있어 Claude 브랜치에서 안 보였고, 그 때문에 Claude 가 같은 자동화를
+처음부터 다시 설계하려 한 일이 있었다(그래서 `scripts/session_bootstrap.py` 에
+"다른 에이전트의 미병합 작업" 절을 추가했다).
+
+- `python math_dialogue.py selftest` **통과** (토론·중복방지·동시선점·OPEN 질문 동기화).
+- 신뢰 경계가 이 저장소 규약과 맞다: 모든 메시지 권한이 `UNASSESSED_DIALOGUE_ONLY` 라
+  ledger·evidence·witness·pruning 으로 자동 승격되는 경로가 없고, 자동 실행이 tracked
+  파일을 건드리지 않으며 산출물이 `local_runs/` 에만 쌓인다. lease·TTL·`max_rounds`·
+  `max_messages` 로 무한 토론을 막는다.
+- **미병합.** `CLAUDE.md`·`pyproject.toml`·`docs/DECISIONS.md`·`ci.yml` 을 바꾸므로
+  병합되면 프로젝트 규칙이 바뀐다. Codex 소유 브랜치라 Claude 가 임의로 병합하지 않는다
+  (`docs/AI_WORKFLOW.md` — 남의 브랜치는 HANDOFF 없이 손대지 않는다). 병합 판단은 사람 몫.
 
 <!-- 예시 행(실제 작업이 생기면 이 형식으로 추가):
 | #12 | 재배향 프로파일링 | codex | codex/12-profile-reorientation | active | 2026-07-12 |

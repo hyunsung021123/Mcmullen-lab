@@ -1,4 +1,4 @@
-"""
+r"""
 reorientation_cover.py — 재배향 하이퍼큐브 커버리지 기반의 정확한(exact) witness 검증기.
 
 Epic #37 / Task #38 (source: chatgpt, relayed by user). 상세 설계와 수학적 정당화는
@@ -186,6 +186,8 @@ def evaluate_coverage(
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     # ── 자체 테스트: 공식 → mask → coverage → legacy 순으로 신뢰를 쌓는다 ──
     from om_core import mcmullen_evaluate
 

@@ -171,6 +171,8 @@ def run_autonomous_research(d: int, r: int | None = None, *,
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     import json
     import tempfile
 

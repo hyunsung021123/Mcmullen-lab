@@ -42,6 +42,8 @@ class SearchConfig:
     accepted_cap: int = 50
     rounds: int = 6
     seed: int | None = None
+    # custom class 전용 옵션. accept/max_candidates/dedup/seed는 오케스트레이터가 소유한다.
+    class_options: dict = field(default_factory=dict)
     # 연구 루프
     discovery_enabled: bool = True
     memory_path: str | None = None       # 설정 시 장기기억 로드/갱신/저장
@@ -55,7 +57,17 @@ class SearchConfig:
     def resolve(self):
         if self.om_class not in CLASS_REGISTRY:
             raise KeyError(f"알 수 없는 클래스 '{self.om_class}'. 사용 가능: {sorted(CLASS_REGISTRY)}")
+        if not isinstance(self.class_options, dict):
+            raise TypeError("class_options는 mapping이어야 함")
+        reserved = {"accept", "max_candidates", "dedup", "seed"}
+        overlap = reserved.intersection(self.class_options)
+        if overlap:
+            raise ValueError(f"class_options가 예약된 생성기 옵션을 덮어씀: {sorted(overlap)}")
         oc = CLASS_REGISTRY[self.om_class]
+        if self.class_options and oc.backend != "custom":
+            raise ValueError("class_options는 custom 탐색 class에서만 사용할 수 있음")
+        if self.backend is not None and oc.backend == "custom":
+            raise ValueError("custom 탐색 class에는 generic backend override를 사용할 수 없음")
         r = oc.resolve_rank(self.d)
         d_eff = r - 1
         self._r = r; self._d_eff = d_eff
@@ -108,8 +120,10 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
     store = ResultsStore({
         "d": d_eff, "requested_d": cfg.d, "r": r, "U": cfg.U,
         "om_class": cfg.om_class, "om_class_note": oc.note,
+        "om_class_realizable": oc.realizable,
         "n_min": cfg.n_min, "n_max": cfg.n_max,
         "backend": cfg.backend or oc.backend,
+        "seed": cfg.seed, "class_options": dict(cfg.class_options),
         "llm_enabled": cfg.llm_enabled, "llm_model": cfg.llm_model,
         "debate_rounds": cfg.debate_rounds, "discovery_enabled": cfg.discovery_enabled,
         "rounds": cfg.rounds, "criteria_active": cfg.criteria,
@@ -144,6 +158,15 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
                          f"목표상한={target_bound} 토론={'on' if llm_debate else 'off'} "
                          f"discovery={'on' if disco else 'off'}")
 
+    # 트랙터빌리티 경고 (0029 — ui_helpers.feasibility_warnings 에서 이관).
+    # 정성적 경고만 한다: 예상 소요 시간을 약속하지 않는다.
+    backend_effective = cfg.backend or oc.backend
+    if backend_effective == "backtracking" and d_eff >= 4 and cfg.n_max >= 10:
+        push(force=True, msg=(
+            f"  ⚠ rank {r}, n={cfg.n_max} 까지의 모든 uniform OM 을 백트래킹으로 전수 "
+            f"생성하는 것은 현실적이지 않습니다 (README §10). 구조적 seed(cyclic) 또는 "
+            f"z3/cegis 백엔드를 검토하세요."))
+
     stopped = False
     for rnd in range(cfg.rounds):
         # 기준 중복 제거(학습 루프가 같은 기준을 다시 추가할 수 있음)
@@ -173,6 +196,7 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
                       max_candidates=cfg.max_candidates_per_round)
         if cfg.seed is not None:
             gen_kw["seed"] = cfg.seed
+        gen_kw.update(cfg.class_options)
 
         for ch in class_generator(cfg.om_class, n, r,
                                   backend_override=cfg.backend, **gen_kw):
@@ -284,11 +308,16 @@ def run_search(cfg: SearchConfig, out_path: str = "results.json", verbose: bool 
 
 
 if __name__ == "__main__":
-    cfg = SearchConfig(
-        d=2, om_class="uniform", n_min=6, n_max=6, rounds=1,
-        criteria=[{"name": "acyclic", "mode": "require"},
-                  {"name": "totally_cyclic", "mode": "forbid"},
-                  {"name": "not_reorientable_to_convex", "mode": "target"}],
-        max_candidates_per_round=300, accepted_cap=20,
-        memory_path="/tmp/mem_demo.json", llm_enabled=False)
-    run_search(cfg, out_path="/tmp/demo_results.json")
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = SearchConfig(
+            d=2, om_class="uniform", n_min=6, n_max=6, rounds=1,
+            criteria=[{"name": "acyclic", "mode": "require"},
+                      {"name": "totally_cyclic", "mode": "forbid"},
+                      {"name": "not_reorientable_to_convex", "mode": "target"}],
+            max_candidates_per_round=300, accepted_cap=20,
+            memory_path=str(Path(tmp) / "mem_demo.json"), llm_enabled=False)
+        run_search(cfg, out_path=str(Path(tmp) / "demo_results.json"))

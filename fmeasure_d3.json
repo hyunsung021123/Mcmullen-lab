@@ -1,0 +1,234 @@
+{
+ "d": 3,
+ "rank": 4,
+ "status": "EXACT",
+ "f": 7,
+ "threshold_n": 8,
+ "known_upper_bound": 7,
+ "classical_n": 8,
+ "threshold_witness_realizable": true,
+ "witness": {
+  "status": "WITNESS",
+  "d": 3,
+  "n": 8,
+  "r": 4,
+  "implied_upper_bound": 7,
+  "known_upper_bound": 7,
+  "bound_gain": 0,
+  "classical_n": 8,
+  "beats_classical": false,
+  "om_core_evaluate": {
+   "witness": true,
+   "reorientable": false,
+   "n": 8,
+   "implied_upper_bound": 7,
+   "target_bound": 7,
+   "solves_conjecture": true,
+   "reward": 1.0
+  },
+  "sign_vectors": [
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    -1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    -1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    -1,
+    1,
+    1,
+    1,
+    1
+   ]
+  ],
+  "realization_certificate": {
+   "kind": "integer_vector_realization/rank1-blocks",
+   "rank": 4,
+   "n": 8,
+   "lambda": "j",
+   "scale_t": 3,
+   "t_exceeds_rank_factorial": false,
+   "vectors": [
+    [
+     1,
+     1,
+     1,
+     1
+    ],
+    [
+     1,
+     3,
+     9,
+     27
+    ],
+    [
+     1,
+     9,
+     -81,
+     729
+    ],
+    [
+     1,
+     27,
+     729,
+     -19683
+    ],
+    [
+     1,
+     -81,
+     6561,
+     531441
+    ],
+    [
+     1,
+     243,
+     59049,
+     14348907
+    ],
+    [
+     1,
+     729,
+     531441,
+     387420489
+    ],
+    [
+     1,
+     2187,
+     4782969,
+     10460353203
+    ]
+   ],
+   "verified_by": "om_core.Chirotope.from_vectors 부호 완전 일치",
+   "insight_ids": [
+    "HI-0004"
+   ]
+  },
+  "realizability": "REALIZABLE",
+  "cross_check": {
+   "path": "rank-2 layer union",
+   "matches_product_formula": true,
+   "layers": [
+    {
+     "rank": 2,
+     "order": [
+      4,
+      0,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7
+     ],
+     "signs": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ]
+    },
+    {
+     "rank": 2,
+     "order": [
+      3,
+      2,
+      0,
+      1,
+      4,
+      5,
+      6,
+      7
+     ],
+     "signs": [
+      1,
+      1,
+      -1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ]
+    }
+   ],
+   "rank2_block_certificate": true
+  },
+  "evals": 65801,
+  "restarts": 0,
+  "elapsed_s": 25.4,
+  "seed": -1
+ },
+ "rows": [
+  {
+   "n": 5,
+   "status": "NO_WITNESS_PROVEN",
+   "num_states": 4096,
+   "scanned": 4096,
+   "complete": true,
+   "num_witnesses": 0,
+   "best_f": 10,
+   "elapsed_s": 0.0
+  },
+  {
+   "n": 6,
+   "status": "NO_WITNESS_PROVEN",
+   "num_states": 32768,
+   "scanned": 32768,
+   "complete": true,
+   "num_witnesses": 0,
+   "best_f": 8,
+   "elapsed_s": 1.2
+  },
+  {
+   "n": 7,
+   "status": "NO_WITNESS_PROVEN",
+   "num_states": 262144,
+   "scanned": 262144,
+   "complete": true,
+   "num_witnesses": 0,
+   "best_f": 4,
+   "elapsed_s": 46.3
+  },
+  {
+   "n": 8,
+   "status": "WITNESS",
+   "num_states": 2097152,
+   "scanned": 65801,
+   "complete": false,
+   "num_witnesses": 1,
+   "best_f": 0,
+   "elapsed_s": 25.4
+  }
+ ]
+}

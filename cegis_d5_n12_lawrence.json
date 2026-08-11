@@ -1,0 +1,22 @@
+{
+ "status": "UNSAT",
+ "d": 5,
+ "n": 12,
+ "r": 6,
+ "rounds": 45,
+ "clauses": 545,
+ "num_vars": 30,
+ "implies": "f(5) >= 12",
+ "trust": "solver UNSAT 단독으로는 PROVEN 이 아니다 — 독립 solver 또는 검사 가능한 unsat proof 가 필요하다 (명세 C0)",
+ "elapsed_s": 5266.2,
+ "log": [
+  "[lawrence-cegis] d=5 n=12 rank=6 | primary 변수 30 (2^30) | circuit 792 | 재배향 2^11=2048 | GP 제약 없음",
+  "  라운드 1: survivor 232 (절 0, 0s)",
+  "  라운드 2: survivor 91 (절 24, 6s)",
+  "  라운드 3: survivor 60 (절 48, 18s)",
+  "  라운드 4: survivor 37 (절 72, 33s)",
+  "  라운드 6: survivor 8 (절 120, 101s)",
+  "  라운드 7: survivor 6 (절 128, 113s)",
+  "  UNSAT — 이 (n=12, rank=6) 의 Lawrence family 에 witness 가 없다 (라운드 45, 절 545)"
+ ]
+}

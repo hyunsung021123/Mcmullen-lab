@@ -174,6 +174,8 @@ def to_legacy_bias(step: dict) -> dict:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     import json
 
     # (1) 모든 kind 가 비어있지 않은 obligation 목록을 갖는지 (obligation 없는 kind 금지)

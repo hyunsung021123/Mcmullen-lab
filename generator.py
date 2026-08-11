@@ -63,10 +63,18 @@ def generate_backtracking(
     dedup: bool = True,
     max_candidates: int = 200,
     max_nodes: int = 2_000_000,
+    stats: Optional[dict] = None,
 ) -> Iterator[Chirotope]:
     """GP-적법한 uniform chirotope 들을 차례로 방출.
     accept(ch): True 인 것만 방출(require/forbid 조기 필터). None 이면 전부.
-    dedup: 재배향-서명으로 중복 제거. max_* 는 안전장치."""
+    dedup: 재배향-서명으로 중복 제거. max_* 는 안전장치.
+
+    stats: dict 를 주면 소진 여부를 기록한다 —
+      {"nodes","emitted","hit_candidate_cap","hit_node_cap","exhausted"}.
+    `exhausted=True` 는 "이 (n,r) 의 GP-적법 uniform chirotope 를 (전역 부호 고정
+    하에) 하나도 빠짐없이 방출했다"는 뜻이며, `falsify.py` 가 '전수 확인' 등급을
+    주장할 수 있는 유일한 근거다. 캡에 걸리면 False 가 되어 주장이 자동으로 약해진다.
+    (dedup=True 면 중복 제거로 일부가 생략되므로 exhausted 는 항상 False.)"""
     subs, by_max = _compile_relations(n, r)
     signs: dict[tuple, int] = {}
     seen: set = set()
@@ -99,6 +107,12 @@ def generate_backtracking(
                 return
 
     yield from dfs(0)
+    if stats is not None:
+        hit_cand = emitted[0] >= max_candidates
+        hit_node = nodes[0] >= max_nodes
+        stats.update({"nodes": nodes[0], "emitted": emitted[0],
+                      "hit_candidate_cap": hit_cand, "hit_node_cap": hit_node,
+                      "exhausted": (not hit_cand) and (not hit_node) and (not dedup)})
 
 
 # ───────────────────────────── Z3 백엔드 (선택) ─────────────────────────────
@@ -227,6 +241,8 @@ def generate(n: int, r: int, *, backend: str = "backtracking", **kw) -> Iterator
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     # 데모: d=2 (r=3), n=5 에서 GP-적법 uniform OM 을 몇 개 만들어 본다.
     _compile_relations.cache_clear()
     first_run = list(generate_backtracking(5, 3, dedup=True, max_candidates=8))

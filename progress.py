@@ -107,6 +107,8 @@ class SearchRunner:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     # 헤드리스 점검: 백그라운드 실행 + 일시정지 + 재개 + 중단
     from search import SearchConfig
     cfg = SearchConfig(d=2, om_class="uniform", n_min=6, n_max=6, rounds=1,
