@@ -47,7 +47,8 @@ source는 모두 `UNASSESSED_DIALOGUE_ONLY`이며 `evidence_db.py`, insight ledg
 ## 폭주와 표류 방지
 
 - 일반 inbox가 비어 있을 때만 새 탐사를 만든다.
-- 기본값은 동시에 열린 탐사 1개, strategist당 UTC 일일 4개, 30분 cooldown이다.
+- 기본값은 동시에 열린 탐사 1개, strategist당 UTC 일일 12개, 10분 cooldown이다. 낮은 수익으로
+  닫히면 다음 heartbeat에서 바로 다른 분야로 전환할 수 있다.
 - topic은 기본 6 round, 8 message에서 닫힌다.
 - 한 heartbeat는 한 메시지만 처리한다.
 - 한 사이클은 핵심 전이 하나만 밀며, 병렬 질문 폭발 대신 가장 값싼 판별 의무 하나를 라우팅한다.
@@ -69,9 +70,14 @@ source는 모두 `UNASSESSED_DIALOGUE_ONLY`이며 `evidence_db.py`, insight ledg
 
 ```powershell
 python -X utf8 math_dialogue.py seed-exploration --agent strategist
+python -X utf8 math_dialogue.py claim --agent strategist
 python -X utf8 math_dialogue.py research-log --limit 100
 python -X utf8 math_dialogue.py research-log --cycle <ER-CYCLE-ID>
 ```
 
 향후 second brain은 `research-log`의 `math-dialogue-research-log/v1` 출력을 읽는 별도 adapter로
 붙인다. 원본 SQLite 행을 다시 판정하거나 덮어쓰지 않는다.
+
+기존 strategist Scheduled prompt가 `claim --agent strategist`에서 `no_work`면 종료하도록 쓰여
+있어도 CLI가 먼저 bounded seed를 수행하므로 automation 자체를 다시 만들 필요가 없다. 수동으로
+순수 inbox만 확인하려면 `claim --agent strategist --no-idle-exploration`을 쓴다.

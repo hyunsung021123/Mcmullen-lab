@@ -468,8 +468,8 @@ def sync_open_questions(open_path: Path | str, recipient: str, *, min_active_age
 
 
 def seed_exploration(agent: str, *, seed: int | None = None,
-                     max_cycles_per_day: int = 4, max_open_cycles: int = 1,
-                     cooldown_seconds: int = 1800, max_rounds: int = 6,
+                     max_cycles_per_day: int = 12, max_open_cycles: int = 1,
+                     cooldown_seconds: int = 600, max_rounds: int = 6,
                      max_messages: int = 8,
                      domain_deck: tuple[tuple[str, str, str], ...] = EXPLORATION_DOMAIN_DECK,
                      db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
@@ -937,6 +937,30 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
         except Exception:
             conn.rollback()
             raise
+
+
+def claim_for_heartbeat(agent: str, *, lease_seconds: int = 900,
+                        idle_exploration: bool = True,
+                        db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """기존 strategist automation도 수정 없이 창발 루프에 들어가게 하는 CLI 경계.
+
+    먼저 일반 inbox를 선점한다. 비어 있고 agent가 strategist일 때만 bounded seed를 한 번
+    호출하고, 생성됐다면 그 메시지를 즉시 선점한다. 라이브러리 API ``claim_message``의
+    기존 의미는 바꾸지 않아 relay와 테스트의 하위호환을 유지한다.
+    """
+    item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
+    seeded = None
+    if item is None and idle_exploration and agent == "strategist":
+        seeded = seed_exploration(agent, db_path=db_path)
+        if seeded["status"] == "created":
+            item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
+            if item is None:
+                raise RuntimeError("생성한 탐사 메시지를 즉시 선점하지 못함")
+    return {
+        "status": "claimed" if item is not None else "no_work",
+        "message": item,
+        "idle_exploration": seeded,
+    }
 
 
 def release_message(agent: str, message_id: int, *,
@@ -1434,6 +1458,22 @@ def selftest() -> None:
         )
         assert prioritized["status"] == "inbox_not_empty"
 
+        # 기존 automation이 호출하는 claim CLI 경계는 strategist idle을 자동 seed한다.
+        auto_db = Path(td) / "auto-claim.sqlite3"
+        register_agent("strategist", "자동 seed strategist", db_path=auto_db)
+        auto_claim = claim_for_heartbeat("strategist", db_path=auto_db)
+        assert auto_claim["status"] == "claimed"
+        assert auto_claim["idle_exploration"]["status"] == "created"
+        assert auto_claim["message"]["exploration_cycle_id"] is not None
+        plain_db = Path(td) / "plain-claim.sqlite3"
+        register_agent("strategist", "수동 strategist", db_path=plain_db)
+        plain_claim = claim_for_heartbeat(
+            "strategist", idle_exploration=False, db_path=plain_db,
+        )
+        assert plain_claim == {
+            "status": "no_work", "message": None, "idle_exploration": None
+        }
+
         # TTL/중단으로 처리 가능 메시지가 사라진 cycle은 다음 seed에서 자동 회수된다.
         register_agent("explorer-e", "창발 탐사 E", db_path=db)
         abandoned = seed_exploration(
@@ -1507,6 +1547,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("claim", help="agent inbox에서 메시지 하나 선점")
     p.add_argument("--agent", required=True)
     p.add_argument("--lease-seconds", type=int, default=900)
+    p.add_argument("--no-idle-exploration", action="store_true",
+                   help="strategist inbox가 비어도 창발 탐사를 만들지 않음")
 
     p = sub.add_parser("release", help="처리하지 않은 선점 메시지를 큐로 반환")
     p.add_argument("--agent", required=True)
@@ -1529,9 +1571,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("seed-exploration", help="유휴 strategist용 무작위 분야 탐사 생성")
     p.add_argument("--agent", default="strategist")
     p.add_argument("--seed", type=int)
-    p.add_argument("--max-cycles-per-day", type=int, default=4)
+    p.add_argument("--max-cycles-per-day", type=int, default=12)
     p.add_argument("--max-open-cycles", type=int, default=1)
-    p.add_argument("--cooldown-seconds", type=int, default=1800)
+    p.add_argument("--cooldown-seconds", type=int, default=600)
     p.add_argument("--max-rounds", type=int, default=6)
     p.add_argument("--max-messages", type=int, default=8)
     p = sub.add_parser("research-log", help="구조화 연구 사이클·사건·출처 JSON 조회")
@@ -1572,9 +1614,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         _json_print({"message_id": message})
     elif args.command == "claim":
-        item = claim_message(args.agent, lease_seconds=args.lease_seconds, db_path=db)
-        _json_print({"status": "claimed", "message": item} if item else
-                    {"status": "no_work", "message": None})
+        _json_print(claim_for_heartbeat(
+            args.agent, lease_seconds=args.lease_seconds,
+            idle_exploration=not args.no_idle_exploration, db_path=db,
+        ))
     elif args.command == "release":
         _json_print(release_message(args.agent, args.message_id, db_path=db))
     elif args.command == "submit":

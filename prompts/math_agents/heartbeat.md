@@ -9,10 +9,11 @@
    `python math_dialogue.py sync-open --to {AGENT_NAME} --min-active-agents 2
    --max-open-topics 2 --limit 1`
 3. `python -X utf8 math_dialogue.py claim --agent {AGENT_NAME}`으로 메시지 정확히 한 건을
-   선점한다. 일반 사용자·저장소·동료 메시지는 언제나 창발 탐사보다 우선한다.
+   선점한다. 일반 사용자·저장소·동료 메시지는 언제나 창발 탐사보다 우선한다. 이 CLI는
+   strategist inbox가 비면 아래 bounded seed를 자동 수행하므로, 곧바로 `claimed`가 올 수도 있다.
 4. `no_work`이고 agent가 `strategist`이면 다음을 정확히 한 번 실행한다.
    `python -X utf8 math_dialogue.py seed-exploration --agent strategist
-   --max-cycles-per-day 4 --max-open-cycles 1 --cooldown-seconds 1800`
+   --max-cycles-per-day 12 --max-open-cycles 1 --cooldown-seconds 600`
    결과가 `created`일 때만 `claim`을 한 번 더 실행해 방금 만든 메시지를 선점한다.
    `inbox_not_empty`, `open_cycle_limit`, `daily_budget`, `cooldown`이면 정상적인 bounded idle로
    간주하고 tracked 파일을 바꾸지 않은 채 끝낸다. 다른 역할은 `no_work`에서 즉시 끝낸다.

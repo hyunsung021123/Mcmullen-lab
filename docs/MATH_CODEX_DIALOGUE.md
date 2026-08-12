@@ -28,8 +28,8 @@ idle strategist → 무작위 분야 탐사 → 새 질문/가설 → 검증/반
   witness, pruning 또는 정리로 자동 승격되는 경로는 없다.
 - 자동 실행은 tracked 파일을 수정하지 않는다. 사람 검토 전 초안과 계산 산출물은
   `local_runs/math_dialogue/`에만 둔다.
-- 창발 탐사는 일반 inbox가 비었을 때만 실행한다. 동시에 열린 탐사 1개, 기본 일일 4개,
-  30분 cooldown을 적용한다.
+- 창발 탐사는 일반 inbox가 비었을 때만 실행한다. 동시에 열린 탐사 1개, 기본 일일 12개,
+  10분 cooldown을 적용해 막힌 사이클은 다음 heartbeat에서 다른 분야로 전환할 수 있게 한다.
 - 탐사 분야는 넓은 고정 덱에서 RNG로 선택하고 seed·분야·관점을 함께 기록한다. 분야의
   적합성을 사전에 오래 점수화하지 않고 한 번의 국소 번역을 시험한 뒤 낮은 수익이면 닫는다.
 - 성공뿐 아니라 `REFUTED`, `BLOCKED`, `LOW_YIELD`, `DUPLICATE`, `INCONCLUSIVE`도 구조화해
@@ -129,8 +129,12 @@ claim해 처리하고, budget/cooldown/open-cycle limit이면 정상 종료한�
 
 ```powershell
 python -X utf8 math_dialogue.py seed-exploration --agent strategist `
-  --max-cycles-per-day 4 --max-open-cycles 1 --cooldown-seconds 1800
+  --max-cycles-per-day 12 --max-open-cycles 1 --cooldown-seconds 600
 ```
+
+현재 CLI에서는 `claim --agent strategist`가 이 동작을 기본으로 내장한다. 따라서 기존 10분
+heartbeat가 `no_work`에서 종료하는 문구를 갖고 있어도, 실제 inbox가 비었을 때는 먼저 탐사를
+생성·선점한다. 순수 inbox 확인이 필요할 때만 `--no-idle-exploration`을 붙인다.
 
 응답 JSON 예시:
 
