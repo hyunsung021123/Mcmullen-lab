@@ -187,10 +187,22 @@ def mcmullen_evaluate(chi, U=None):
     """McMullen(OM 버전) 평가/보상.
     witness = '어떤 재배향으로도 convex 가 되지 않는' uniform OM
             => OM-McMullen 수의 상한을 n-1 로 끌어내림.
-    U: 기존 느슨한 상한 2d + floor((1+d)/2). reward = (U+1) - n  (n 작을수록 강함)."""
+    U: 알려진 상한 nu(d) <= U(d) = floor(5d/2). reward = (U+1) - n  (n 작을수록 강함).
+       reward > 0  <=>  n <= U  <=>  이 witness 가 알려진 상한을 실제로 개선한다.
+
+       ⚠ 정정(0042): 이전 식 `2d + floor((1+d)/2)` 는 **짝수 d 에서만** U(d) 와 같고
+       홀수 d 에서는 U(d)+1, 즉 고전 Lawrence 구성의 **witness 크기** M(d) 였다.
+       (witness at n  =>  nu(d) <= n-1 이므로 두 양은 항상 1 차이다.)
+       그 결과 홀수 d 에서 n = M(d) 인 고전 구성이 reward = 1 > 0 을 받아
+       '개선'으로 보고됐다 — 실제로는 nu(d) <= M(d)-1 = U(d) 로 알려진 상한과 같아
+       개선이 0 이다. docs/STATE.md 와 layer_search.known_upper_bound 는 이미 올바른
+       식을 쓰고 있었다.
+
+       witness/valid 판정은 U 를 쓰지 않으므로 이 정정은 판정 권한과 무관하다.
+       solves_conjecture 도 U 가 아니라 target_bound = 2d+1 로 계산된다."""
     d = chi.r - 1
     if U is None:
-        U = 2 * d + (1 + d) // 2
+        U = (5 * d) // 2
     reorientable, flip = chi.is_reorientable_to_convex()
     if reorientable:
         return {"witness": False, "reorientable": True, "n": chi.n, "reward": 0.0}
@@ -241,6 +253,28 @@ if __name__ == "__main__":
     assert tc.is_acyclic() is False
     assert tc.is_totally_cyclic() is True
     assert tc.is_convex_position() is False
+
+    # ── U(d) core-contract (0042) ─────────────────────────────────────────
+    # 알려진 상한 U(d) 와 고전 Lawrence 구성의 witness 크기 M(d) 는 정확히 1 차이이고,
+    # 옛 식 2d+floor((1+d)/2) 는 **홀수 d 에서만** M(d) 와 같아 눈에 잘 띄지 않았다.
+    # 이 항등식을 고정해 두면 누가 다시 두 양을 섞을 때 CI 가 잡는다.
+    for _d in range(1, 12):
+        _U = (5 * _d) // 2                       # 알려진 상한 nu(d) <= U(d)
+        _M = _U + 1                              # 고전 구성이 witness 를 주는 크기
+        assert 2 * _d + (1 + _d) // 2 == _U + (_d % 2), f"U/M parity 항등식 깨짐: d={_d}"
+        assert (_d % 2 == 0) or (2 * _d + (1 + _d) // 2 == _M), f"홀수 d 에서 옛 식 != M: d={_d}"
+        # reward > 0  <=>  n <= U(d)  <=>  알려진 상한을 실제로 개선
+        assert float(_U + 1 - _M) == 0.0, f"n=M(d) 는 개선이 아니므로 reward 0: d={_d}"
+
+    # 기본 U 가 실제로 U(d) 인지 — rank-2 예제는 d=1 (홀수) 이라 두 식이 갈린다.
+    # (rank-2 OM 은 README §5 의 알려진 특이 케이스로 항상 non-convex = witness 다.)
+    ev_tc = mcmullen_evaluate(tc)
+    assert ev_tc["witness"] is True and ev_tc["n"] == 4
+    assert ev_tc["reward"] == float((5 * 1) // 2 + 1 - 4), \
+        f"기본 U 가 U(1)=2 가 아님 (옛 식이면 0.0 이 나온다): {ev_tc['reward']}"
+    # 호출자가 U 를 명시하면 그 값을 그대로 쓴다
+    assert mcmullen_evaluate(tc, U=10)["reward"] == float(10 + 1 - 4)
+    print("U(d) core-contract OK (알려진 상한 U=floor(5d/2) vs witness 크기 M=U+1 분리)")
 
     # 직렬화 왕복 점검
     d = quad.to_dict(); back = Chirotope.from_dict(d)
