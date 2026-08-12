@@ -97,6 +97,8 @@ class Memory:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     m = Memory("/tmp/mem_test.json")
     m.record_generator("realizable_uniform", attempts=300, witnesses=5, best_bound=7)
     m.record_criterion("acyclic", True); m.record_criterion("acyclic", True)

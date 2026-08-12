@@ -44,17 +44,20 @@ coverage/SAT/CEGIS/대칭 축소/certificate 파이프라인이 병합됨 (도�
 
 ## 4. 다음 후보 방향 (검증 가능한 것 우선)
 
-1. **구조적 시드에서 출발**: 순환다면체 / Lawrence / 사용자의 rank-2 REOM 인코딩.
+1. **rank-2 extended Lawrence class 사용**: `extended_lawrence_r2`가 signed-permutation
+   rank-2 layer들의 Lawrence–Weinberg union을 rank-6 realizable chirotope로 직접 공급한다
+   (d=5에서는 layer 3개). 최종 판정은 기존 exact evaluator가 담당한다.
 2. **타깃 SAT/Z3**(`backend: z3`)로 GP + 편향을 인코딩해 대규모/구조적 탐색.
-3. **REOM 소켓 연결**: `om_classes.py`의 `lawrence` 소켓(또는 신규 `reom` 클래스)에
-   `(n, r, *, accept, **kw) -> Iterator[Chirotope]` 시그니처의 생성기를 연결. 인코딩(또는
-   Z3 제약)이 확정되면 통합 — 코어 검증은 그대로 재사용.
+3. **minimum interval map 성질 측정**: `interval_maps.py`의 단일-layer beta_0/beta_1은
+   exact 분석량이다. layer composition과 final rank-6 obstruction 사이의 관계는 아직
+   heuristic이므로 opt-in ranking과 benchmark에만 사용한다(HI-0002/HI-0003).
 4. 위원회(theorist)는 "어떤 부분구조를 고정/금지할지" 같은 **검증 가능한 편향**만 제안하고,
    결정론적 게이트(proof_checker/counterexample_hunter)를 통과한 것만 반영.
 
 ## 5. 열린 질문 (교차 리뷰 환영)
 
-- rank-2 REOM 인코딩을 어떤 형식으로 코어에 넘길 것인가(signed-permutation-tuple /
-  ABA-패턴 → chirotope)?
+- layer-map composition score가 exact McMullen coverage 품질과 실제로 양의 상관을 갖는가?
+  동일 seed·예산의 heuristic on/off benchmark가 필요하다.
+- signed-permutation tuple의 relabel/layer-order 대칭을 recall 손실 없이 얼마나 더 줄일 수 있는가?
 - d=3에서 비실현(non-realizable) witness가 실현가능 witness보다 더 작은 n을 줄 수 있는가?
   (현재 `random` 백엔드는 실현가능만 생성 → 비실현 탐색은 `uniform`/`z3` 필요)

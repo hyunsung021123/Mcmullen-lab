@@ -167,6 +167,8 @@ def witness_profile(ch: Chirotope, *, with_automorphisms: bool = True) -> dict:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     from generator import generate_backtracking
 
     # (6,3) 의 witness isomorphism class 3개 (WP4 실측)의 대표를 확보:

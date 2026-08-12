@@ -4,6 +4,13 @@ McMullen 문제를 **유향 매트로이드(OM)** 로 재구성해, "어떤 사�
 볼록 위치(convex position)로 만들 수 없는" uniform OM 을 **가능한 한 적은 원소 수 n** 으로
 찾는 로컬 연구 에이전트입니다. 그런 OM 을 n 개 원소에서 찾으면 OM-McMullen 상한이 **n−1** 로 내려갑니다.
 
+> **새 워크플로 (0028): 정리 발굴 루프.** 기존 탐색기는 witness 를 찾고 검증하지만,
+> 거기서 **수학적 성질을 문장으로 뽑아내지는 못했습니다.** 이제 그 계층이 생겼습니다 —
+> §11 을 보세요. 한 줄 요약:
+> `python research_cycle.py run --d 2 --n 6` → 생성된 프롬프트를 고급 모델 대화창에
+> 붙여넣기 → 답을 저장 → `python research_cycle.py ingest --run 0001`.
+> **API 키는 필요 없습니다.**
+
 ## 빠른 시작 (Clone 후 3단계)
 
 ```bash
@@ -53,12 +60,12 @@ python run.py --config config.example.yaml
 
 | 요구 | 구현 |
 |---|---|
-| **① 간단한 조작으로 로컬 루프 실행** | `run.py`(CLI) + `config.yaml`,  또는 `dashboard.py`(버튼) |
-| **① 클래스(탐색 공간) 지정** | `om_classes.py` 레지스트리 + `config` 의 `om_class` + 대시보드 선택 + `--list-classes` |
-| **② 이론적 성질을 쉽게 넣고 빼는 옵션** | `criteria.py` 레지스트리 + `config.yaml` 의 `criteria` 목록 + 대시보드 토글 |
-| **② 실시간 현황 + 일시정지/중단** | `progress.py`(Progress·Control·SearchRunner) + 대시보드 라이브 패널 + CLI 한 줄 현황(Ctrl-C 중단) |
+| **① 간단한 조작으로 로컬 루프 실행** | `run.py`(CLI) + `config.yaml`, `research_cycle.py`(연구 루프 CLI) |
+| **① 클래스(탐색 공간) 지정** | `om_classes.py` 레지스트리 + `config` 의 `om_class` + `--list-classes` |
+| **② 이론적 성질을 쉽게 넣고 빼는 옵션** | `criteria.py` 레지스트리 + `config.yaml` 의 `criteria` 목록, 그리고 `invariants.py` 어휘(LLM 확장 가능) |
+| **② 실시간 현황 + 일시정지/중단** | `progress.py`(Progress·Control·SearchRunner) + CLI 한 줄 현황(Ctrl-C 중단) |
 | **③ 어떤 구성이 어떤 상한 개선/성질을 썼는지 도출** | `store.py` provenance(JSON): witness 마다 `implied_upper_bound`, `criteria_satisfied/failed`, 승격된 편향 |
-| **④ 결과를 알아보기 쉬운 UI** | `dashboard.py`(Streamlit): 실시간 현황 + 핵심 상한·성질 분포·결과표·witness 근거 상세 |
+| **④ 결과를 알아보기 쉬운 형태** | `experiments/run_NNNN/report.md` (사람이 읽는 라운드 보고서) + `research_log.md` (한 줄 이력). 0029 에서 Streamlit 대시보드를 제거하고 대화창에서 CLI 로 운용하는 방식으로 전환했다 |
 
 핵심 모듈: `om_core.py`(검증 앵커) · `om_classes.py`(탐색 공간) · `generator.py`(후보 생성) · `criteria.py`(옵션) · `discovery.py`(자동 발견) · `theorist.py`(다중 전문가 토론+결정론적 반례/증명검사) · `memory.py`(장기기억) · `search.py`(연구 루프) · `manager.py`(오케스트레이터) · `progress.py`(현황/제어).
 
@@ -102,7 +109,7 @@ python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\Activate.ps1
 
 # (3) 패키지 설치 — pyproject.toml 기반. 코어만 필요하면 대괄호 생략 가능.
-pip install -e ".[all]"              # UI(streamlit/pandas) + config(yaml) + z3 + llm(requests) 전부
+pip install -e ".[all]"              # config(yaml) + z3 + llm(requests) 전부
 # 필요한 것만: pip install -e ".[ui]"  또는  pip install -e ".[ui,config]"  등
 
 # (4) 코어가 도는지 자체 점검
@@ -146,12 +153,11 @@ python run.py --config config.example.yaml --research --llm --model qwen2.5 --de
 # 결과: results.json
 ```
 
-### 대시보드 (탐색 기준 토글 + 결과 보기)
+### 연구 루프 (정리 발굴 — §11 참고)
 ```bash
-streamlit run dashboard.py
+python research_cycle.py run --d 2 --n 6      # 코퍼스 → 채굴 → 반증 → 프롬프트
+python research_cycle.py status               # 실험 목록
 ```
-왼쪽에서 d/n 범위와 **성질 토글**(require/forbid/target)을 정하고 **탐색 실행**.
-또는 사이드바에 기존 `results.json` 경로를 넣어 과거 결과만 볼 수도 있습니다.
 
 ---
 
@@ -167,29 +173,43 @@ python run.py --list-classes      # 사용 가능한 클래스 보기
 | `uniform` | 모든 uniform OM (rank d+1, 전수 백트래킹; 비실현 포함) |
 | `realizable_uniform` | 실현가능 uniform OM (무작위 점배치, d≥3 에서 빠름) |
 | `rank2_uniform` | rank-2 uniform OM (rank=2 고정) — **REOM 실험 기반** |
+| `extended_lawrence_r2` | uniform rank-2 layer들의 Lawrence–Weinberg union — 짝수 rank, **실현가능** |
 | `cyclic` | 순환다면체(교대) OM — 기준선/시드 |
-| `lawrence` | 소켓 — REOM 인코딩 연결 시 동작 |
+| `lawrence` | 고전 rank-1 Lawrence용 legacy 소켓(현재 미연결) |
 
-`config.yaml` 의 `om_class:` 또는 `--class` 로 지정. **새 클래스(당신의 REOM)** 추가:
-```python
-from om_classes import OMClass, register_class
-register_class(OMClass("reom", "rank-2 Lawrence(REOM)", backend="custom", rank=2),
-               generator=my_reom_generator)   # (n, r, *, accept, **kw) -> Iterator[Chirotope]
+`config.yaml`의 `om_class:` 또는 `--class`로 지정합니다. d=5, n=12의 rank-2 extended
+Lawrence 탐색 예:
+
+```yaml
+d: 5
+om_class: extended_lawrence_r2
+n_min: 12
+n_max: 12
+seed: 20260810
+class_options:
+  interval_heuristic: sampled       # off(기본) | sampled | exhaustive
+  interval_pool_size: 8
+  interval_reorientations: 64
 ```
+
+최종 rank-6 chirotope는 세 rank-2 layer의 ordered union product로 직접 만들어지고 기존
+`om_core.mcmullen_evaluate()`가 그대로 판정합니다. layer tuple은 결과 레코드의
+`construction`에 저장되어 재현할 수 있습니다. `interval_heuristic`은 minimum interval map
+합성값으로 **후보 순서만** 바꾸며, 후보 제거·witness 판정에는 사용되지 않습니다.
 
 > ⚠ **rank-2 주의(솔직)**: 일반 OM 정의에서 convex position 은 "모든 Radon 분할이 양쪽 ≥2"
 > 인데, rank 2 의 회로는 원소 3개라 항상 (1,2) 분할 → **rank-2 OM 은 이 정의상 전부
 > non-convex** 입니다. 즉 literal McMullen(d=1) 으로는 모든 rank-2 OM 이 자명히 witness 가
-> 되어 의미가 없습니다. `rank2_uniform` 은 **당신의 REOM 인코딩이 상한을 재해석하는
-> 기반(substrate)** 으로 쓰라고 둔 것이며, literal d=1 탐색용이 아닙니다.
+> 되어 의미가 없습니다. layer 하나를 문자 그대로 판정하려면 `rank2_uniform`, 여러 layer를
+> 합쳐 rank-4/rank-6 McMullen 후보를 만들려면 `extended_lawrence_r2`를 사용합니다.
 
 ## 6. 실시간 현황 · 일시정지 · 중단 (요구 ②)
 
 한 번의 루프가 길어질 수 있으므로, 실행 중 현황이 계속 갱신됩니다.
 * **CLI**: 한 줄 현황(상태·round/n·후보수·witness·**현재 최소 상한**·**현재 최선 구성**·경과).
   `Ctrl-C` 로 안전 중단 → 그때까지 결과가 저장됩니다.
-* **대시보드**: 실시간 패널 + **일시정지 / 재개 / 중단** 버튼. 탐색은 백그라운드 스레드에서
-  돌고 화면은 자동 갱신됩니다. 중단해도 부분 결과가 그대로 표에 남습니다.
+* **프로그램에서**: `progress.SearchRunner` 로 백그라운드 실행 + pause/resume/stop
+  (아래 예시). 중단해도 그때까지의 부분 결과가 그대로 저장됩니다.
 
 탐색 공간을 따로 두지 않고 코드로 직접 제어하려면:
 ```python
@@ -221,7 +241,8 @@ criteria:
 ```python
 register("my_prop", lambda ch: <om_core 판별로 만든 bool>, "내 성질 설명")
 ```
-이후 config/대시보드에서 바로 `my_prop` 으로 쓸 수 있습니다.
+이후 config 에서 바로 `my_prop` 으로 쓸 수 있습니다.
+(추측 채굴용 **불변량** 어휘를 늘리는 것은 별개입니다 — §11 과 `invariants.py` 참고.)
 
 ---
 
@@ -241,7 +262,7 @@ register("my_prop", lambda ch: <om_core 판별로 만든 bool>, "내 성질 설�
 }
 ```
 → **어떤 구성(`chirotope`)이, 어떤 상한 개선(`implied_upper_bound`)을, 어떤 이론적 성질
-(`criteria_satisfied`)로 달성했는지**가 한 건마다 명확합니다. 대시보드가 이를 그대로 시각화합니다.
+(`criteria_satisfied`)로 달성했는지**가 한 건마다 명확합니다.
 
 ---
 
@@ -254,7 +275,7 @@ flowchart TD
         V["om_core.py\nGP 공리 검증 · acyclic/totally-cyclic/convex 분리\n재배향→convex witness 판정"]
     end
 
-    CFG["config.yaml / 대시보드\n(클래스 + 성질 + 토론/발견 옵션)"] --> CLS["om_classes.py\n탐색공간 선택"]
+    CFG["config.yaml\n(클래스 + 성질 + 토론/발견 옵션)"] --> CLS["om_classes.py\n탐색공간 선택"]
     CFG --> CR["criteria.py\nCriteriaSet (옵션)"]
     CLS --> GEN["generator.py\nbacktracking/random/cyclic/Z3/custom"]
     CR --> GEN
@@ -276,7 +297,7 @@ flowchart TD
 
     MEM["memory.py\n장기기억(실행 간 누적)"] <--> DEBATE
     MEM <--> DISC
-    STORE --> UI["dashboard.py\n실시간 현황 · 상한 · 발견 · 실패분석 · 토론 · 기억"]
+    STORE --> UI["experiments/run_NNNN/report.md\n상한 · 발견 · 실패분석 · 추측/반증"]
 
     MGR --> CLS
     MGR --> MEM
@@ -306,7 +327,125 @@ flowchart TD
 * d=2 는 이미 tight(U=2d+1)이므로 reward 0 이지만, d=3/d=5 에서는 n=2d+2 witness 가
   양의 reward 와 `solves_conjecture=true` 를 줍니다.
 
-### 당신의 REOM(rank-2 Lawrence) 연결
-당신의 signed-permutation-tuple / ABA-패턴 인코딩을 `generator.py` 의 백엔드로 꽂으면,
-rank-6 문제를 rank-2 로 축약한 **타깃 생성기**가 됩니다. 그 인코딩(또는 Z3 제약)을 알려주시면
-`generate_reom(...)` 백엔드로 통합해 드립니다 — 코어 검증은 그대로 재사용됩니다.
+### rank-2 extended Lawrence 탐색
+
+`extended_lawrence.py`가 signed-permutation rank-2 layer tuple과 Lawrence–Weinberg union
+공식을 구현합니다. `interval_maps.py`는 ordered OM의 exact `beta_0`/`beta_1`, strict corner
+witness, rank-2 sign-variation fast path와 선택적 layer-composition profile을 제공합니다.
+단일 layer map은 정확한 분석량이지만 여러 layer의 합성 profile은 아직 final circuit
+extraction 정리가 없으므로 `translations.py`에서도 `heuristic` 등급으로 고정됩니다.
+
+---
+
+## 11. 정리 발굴 루프 (0028) — LLM 으로 수학적 성질을 뽑아내는 경로
+
+기존 파이프라인의 한계는 명확했습니다: **말할 수 있는 어휘가 고정 5개(discovery)와
+8개(criteria)뿐**이라, 정리가 어휘보다 풍부해질 수 없었습니다. 아무리 좋은 모델을
+붙여도 새 수학적 성질이 나올 수 없는 구조였습니다.
+
+### 11.1 한 바퀴
+
+```
+[1] 로컬 대량계산   후보 생성 → om_core 검증 → 불변량 부착        (수천~수만 개)
+[2] 로컬 채굴       "(원자들) ⟹ (원자)" 형태의 명제 자동 추출
+[3] 로컬 반증       각 명제를 실제로 깨뜨리려 공격 (가능하면 전수)
+[4] 프롬프트 생성   살아남은 명제 + 반례 + 표본을 한 파일로
+      ↓  ← 사람이 여기서 한 번만 개입 (고급 모델 대화창에 붙여넣기)
+[5] 응답 흡수       새 불변량 등록(심사 후) · LLM 추측을 즉시 반증 공격
+[6] 기록            experiments/run_NNNN/ + research_log.md
+```
+
+비싼 자원(고급 모델)은 한 바퀴에 **한 번** 쓰이고, 그 사이 로컬 CPU 가 수만 개를
+훑습니다. `--model` 도 `OPENAI_API_KEY` 도 없습니다.
+
+```bash
+python research_cycle.py run --d 2 --n 6      # [1]~[4]
+# prompts/0001-analyze.md 를 ChatGPT/Claude 대화창에 붙여넣고
+# 답변 전체를 responses/0001-analyze.md 로 저장한 뒤:
+python research_cycle.py ingest --run 0001    # [5][6]
+
+python research_cycle.py status               # 실험 목록
+python research_cycle.py vocab                # 현재 불변량 어휘
+python research_cycle.py stage explore        # Explore/Construct/Critique 프롬프트
+```
+
+### 11.2 LLM 이 어휘 자체를 넓힐 수 있다 — 그런데 왜 신뢰가 안 깨지나
+
+응답 JSON 에 파이썬 코드를 담아 **새 불변량을 직접 추가**하고, 쓸모없는 것은
+**폐기**할 수 있습니다. 그래도 신뢰 모델이 유지되는 이유는 **권한 분리** 때문입니다.
+
+| | 권한 |
+|---|---|
+| `om_core` | witness 판정 — **유일한 진실** |
+| 불변량 어휘 | 검증된 대상에 값을 붙이는 '자'. 판정 권한 **0** |
+| `falsify` | 명제 기각 |
+
+라벨 `witness` 는 `frozen` 이라 덮어쓰기·폐기 모두 불가하고, 어휘는 `criteria` 의
+`target` 모드로 승격되지 않습니다. 그래서 **LLM 코드가 틀려도 거짓 witness 가 생기지
+않습니다** — 쓸모없는 추측이 하나 늘 뿐이고 그건 [3]이 죽입니다.
+
+코드는 `sandbox.py` 의 제한 문법(AST 화이트리스트)으로 컴파일됩니다: `import`,
+`while`, `eval`, `_` 로 시작하는 이름, 화이트리스트 밖 전역·속성은 전부 거부.
+통과해도 전역성·결정성·비상수·비용을 실측해 걸러냅니다.
+
+### 11.3 등급을 절대 섞지 않는다
+
+명제 하나마다 두 축의 등급이 붙습니다.
+
+**증거 등급**
+
+| | 뜻 |
+|---|---|
+| `MINED` | 코퍼스에서 관찰됨. **아무것도 증명 안 됨** |
+| `EXHAUSTED_ON_SCOPE` | 그 유한 범위에서 전수 확인. **정리가 아니다** |
+| `UNRESOLVED` | 예산 안에서 반례 못 찾음. 증거로 약함 |
+| `REFUTED` | 반례를 실제로 갖고 있음 (반례 chirotope 보관) |
+
+**불변성 등급** — witness 는 재배향 궤도의 성질이고 원소 이름과 무관합니다. 그런데
+`acyclic`, `num_singleton_circuits` 같은 양은 **대표원소에 의존**합니다. 이 구분을
+놓치면 "대표원소 성질"이 "witness 의 특징짓기"로 잘못 승격됩니다.
+
+| | 뜻 |
+|---|---|
+| `ORBIT_INVARIANT` | 양변 모두 궤도 불변 → witness 와 동치가 될 수 있음 |
+| `REPRESENTATIVE_DEPENDENT` | 한쪽이 재배향에 의존 → 이 대표원소에서만 참일 수 있음 |
+| `LABEL_DEPENDENT` | 원소 이름에 의존 → 정리 후보 아님 (자동 폐기) |
+
+미확인은 **보수적으로 강등**됩니다. 표본 검사는 불변성을 반증할 수만 있고 확증할 수
+없기 때문입니다.
+
+### 11.4 새로 생긴 핵심 불변량
+
+가장 중요한 확장은 **재배향 궤도 전체를 보는 양**입니다.
+
+- `num_tope_pairs` — acyclic 이 되는 재배향 수 (실현가능한 경우 = 얻을 수 있는 점배치 수)
+- `num_convex_reorientations` — convex 가 되는 재배향 수. **witness ⟺ 이 값이 0**
+- `convex_tope_ratio` — 0 에 얼마나 가까운지
+
+즉 witness 를 0/1 이 아니라 **"얼마나 아슬아슬한가"로 잽니다.** 근접 실패(near-miss)
+표본이 프롬프트에 자동으로 들어가는 것도 이 덕분입니다.
+
+### 11.5 산출물이 무슨 뜻인가
+
+| 파일 | 연구 용어로 |
+|---|---|
+| `experiments/run_NNNN/corpus.json` | 이번에 계산한 모든 대상과 그 값. 다시 계산하지 않고 새 질문을 던질 수 있다 |
+| `.../conjectures.json` | 기계가 다시 검사할 수 있는 명제 목록 (사람의 메모가 아님) |
+| `.../falsification.json` | 각 명제를 어떻게 공격했고 무엇이 나왔는지 |
+| `.../manifest.json` | 어떤 git 커밋·설정·**실현가능성 상태**로 돌렸는지 (반년 뒤 재현용) |
+| `.../report.md` | 위 셋을 사람이 읽을 형태로 |
+| `prompts/` · `responses/` | 고급 모델과 주고받은 원문. 대화창을 옮겨도 기록이 남는다 |
+| `research_log.md` | 라운드별 한 줄 요약 (append-only). **실패도 기록** |
+| `knowledge/vocabulary/*.json` | LLM 이 추가한 불변량의 코드와 심사 결과 |
+
+`corpus.json` 만 `.gitignore` 대상입니다(수 MB, `manifest` 의 seed 로 결정론적 재생성 가능).
+나머지는 **연구 기록이므로 커밋합니다** — 같은 막다른 길을 다시 걷지 않기 위해서입니다.
+
+### 11.6 배경 문서
+
+- `knowledge/problem.md` — ν(d) 의 정확한 정의, witness 가 무엇을 증명하고 무엇을
+  증명하지 **않는지**, 추상 OM ≠ 실현가능 점배치
+- `knowledge/known_results.md` — 문헌 주장(전부 `[출처 확인 필요]`)과 이 저장소의
+  실측을 **엄격히 분리**
+- `knowledge/equivalent_formulations.md` — 각 번역이 **어떤 가설 아래** 성립하는지.
+  Gale 쌍대는 의도적으로 미구현(문헌 대조 전 구현 금지)

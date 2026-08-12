@@ -209,7 +209,10 @@ def _cmd_from_results(results_path: str, witness_id: str, out_path: str) -> dict
         ch,
         generator=str(run.get("backend", "unknown")),
         config={"om_class": run.get("om_class"), "run_id": run.get("id"),
-                "criteria_active": run.get("criteria_active")},
+                "om_class_realizable": run.get("om_class_realizable"),
+                "criteria_active": run.get("criteria_active"),
+                "class_options": run.get("class_options", {}),
+                "construction": rec.get("construction")},
         seed=run.get("seed"))
     save_certificate(cert, out_path)
     print(f"certificate 저장: {out_path}")
@@ -303,4 +306,6 @@ def _self_test() -> int:
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     sys.exit(main())

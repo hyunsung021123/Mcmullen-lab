@@ -201,6 +201,8 @@ def mcmullen_evaluate(chi, U=None):
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     # core-contract: 이 값들은 실측(수학적으로 확인된) 기대값이다 — 출력만 하지 않고
     # 반드시 assert한다. 판별 로직이 회귀하면(예: is_convex_position 부호 반전) 여기서
     # 반드시 실패해야 한다. (ChatGPT 리뷰 0004/0006 반영 — 기존엔 print만 하고 값

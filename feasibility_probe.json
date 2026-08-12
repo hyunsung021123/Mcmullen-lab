@@ -1,0 +1,90 @@
+{
+ "cost": [
+  {
+   "n": 6,
+   "r": 3,
+   "samples": 60,
+   "witness": 47,
+   "gen_ms": 0.05,
+   "label_ms": 0.36,
+   "invariants_ms": 0.16,
+   "total_ms": 0.57,
+   "per_hour": 6316195
+  },
+  {
+   "n": 8,
+   "r": 4,
+   "samples": 40,
+   "witness": 1,
+   "gen_ms": 0.22,
+   "label_ms": 2.65,
+   "invariants_ms": 0.86,
+   "total_ms": 3.73,
+   "per_hour": 965350
+  },
+  {
+   "n": 10,
+   "r": 5,
+   "samples": 25,
+   "witness": 0,
+   "gen_ms": 1.27,
+   "label_ms": 18.92,
+   "invariants_ms": 4.51,
+   "total_ms": 24.69,
+   "per_hour": 145804
+  },
+  {
+   "n": 12,
+   "r": 6,
+   "samples": 12,
+   "witness": 0,
+   "gen_ms": 7.46,
+   "label_ms": 141.95,
+   "invariants_ms": 22.85,
+   "total_ms": 172.27,
+   "per_hour": 20897
+  }
+ ],
+ "density": [
+  {
+   "n": 6,
+   "r": 3,
+   "d": 2,
+   "sampled": 3000,
+   "witness": 2266,
+   "witness_rate": 0.7553333333333333,
+   "min_convex_tope_ratio": 0.0,
+   "elapsed_s": 1.2
+  },
+  {
+   "n": 8,
+   "r": 4,
+   "d": 3,
+   "sampled": 1500,
+   "witness": 24,
+   "witness_rate": 0.016,
+   "min_convex_tope_ratio": 0.0,
+   "elapsed_s": 4.3
+  },
+  {
+   "n": 10,
+   "r": 5,
+   "d": 4,
+   "sampled": 400,
+   "witness": 0,
+   "witness_rate": 0.0,
+   "min_convex_tope_ratio": 0.027344,
+   "elapsed_s": 8.5
+  },
+  {
+   "n": 12,
+   "r": 6,
+   "d": 5,
+   "sampled": 120,
+   "witness": 0,
+   "witness_rate": 0.0,
+   "min_convex_tope_ratio": 0.049805,
+   "elapsed_s": 18.6
+  }
+ ]
+}

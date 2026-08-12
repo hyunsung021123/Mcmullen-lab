@@ -7,6 +7,9 @@
 ## 연결된 Issue
 <!-- 예: Closes #12  (작업 단위 이슈가 없으면 이유를 적을 것) -->
 
+## 연결된 인간 insight
+<!-- 예: HI-0003. 관련 없으면 "해당 없음". docs/HUMAN_INSIGHT_PROTOCOL.md 참고. -->
+
 ## 기준 브랜치 / 커밋
 <!-- 예: develop @ <SHA> 에서 분기 (main이 아님 — develop→main 승격 PR만 예외) -->
 
@@ -20,6 +23,7 @@
 - [ ] `om_classes.py`의 클래스 레지스트리 변경
 - [ ] `theorist.py`의 결정론적 적대자(`proof_checker` / `counterexample_hunter`) 변경
 - [ ] 공개 함수/클래스 시그니처 변경 (다른 모듈에서 import하는 것)
+- [ ] 인간 insight 기반 탐색 generator/objective/pruning 변경
 - [ ] 해당 없음 (문서 / 템플릿 / 순수 스타일 변경 등)
 
 ## 신뢰 모델 점검

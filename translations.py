@@ -110,14 +110,35 @@ register(Translation(
          "certificate 독립 replay. docs/AUTONOMOUS_VERIFICATION_PIPELINE.md §3.",
 ))
 
+
+def _encode_layer_interval_profile(layers):
+    from interval_maps import interval_heuristic_profile
+    return interval_heuristic_profile(layers)
+
+
+register(Translation(
+    name="extended-lawrence-r2->composed-minimum-interval-profile",
+    source_domain="rank-2 Lawrence-Weinberg layer tuple",
+    target_domain="composed minimum interval map statistics",
+    exactness="heuristic",
+    encode=_encode_layer_interval_profile,
+    decode=lambda _: None,
+    obligations=("benchmark_against_exact_mcmullen_evaluation",
+                 "never_use_for_candidate_elimination"),
+    note="HI-0003. 단일 layer map은 정확하지만 layer composition에서 final rank-2m "
+         "circuit certificate를 추출하는 정리가 없으므로 ranking 전용.",
+))
+
 # 후속 후보 (등록하지 않음 — 수학적 계약 확정 전):
 #   om-witness -> SAT/CEGIS            : #39/#40 구현됨, equivalence 승격은 교차 리뷰 후
 #   realizable-om -> integer matrix    : realizable 한정 scope
-#   reom/lawrence -> rank-2 encoding   : 사용자의 인코딩 형식 확정 대기 (RESEARCH_STATUS §5)
+#   extended Lawrence -> rank-2 union  : extended_lawrence.py exact generator (HI-0001)
 #   minor/tope-graph features          : 보존 정리 없는 동안 heuristic 전용
 
 
 if __name__ == "__main__":
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     from om_core import Chirotope
     from generator import generate_backtracking
     from certificate import build_certificate
@@ -158,6 +179,9 @@ if __name__ == "__main__":
     except PermissionError as e:
         assert "ranking 전용" in str(e)
     print("heuristic pruning 금지 강제 OK")
+
+    interval_t = REGISTRY["extended-lawrence-r2->composed-minimum-interval-profile"]
+    assert interval_t.exactness == "heuristic" and not can_hard_constrain(interval_t)
 
     # (4) sound_only 는 증명된 방향만
     s = Translation(name="demo-sound-only", source_domain="a", target_domain="b",

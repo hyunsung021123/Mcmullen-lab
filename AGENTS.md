@@ -13,6 +13,29 @@
 4. **`docs/DECISIONS.md`** — 지금까지의 설계 결정(append-only). 최신 항목부터 확인.
 5. **`docs/WORKBOARD.md`** — 지금 누가 무슨 작업을 하고 있는지 인덱스.
 6. **`docs/RESEARCH_STATUS.md`** — 현재 연구 목표/실험 상태/막힌 지점.
+7. **`docs/HUMAN_INSIGHT_PROTOCOL.md`** — 인간 수학 아이디어를 Claude·Codex 공통 상태로
+   형식화하고 반증·구현으로 넘기는 절차.
+
+## 세션·에이전트 공통 진입점 (여기부터)
+
+| 무엇을 하려는가 | 어디를 보나 |
+|---|---|
+| 지금 상황 파악 (새 세션이면 **여기부터**) | `docs/STATE.md` — 목표·확정된 사실·**죽은 길**·진행 중 실험 |
+| 실험 이력 | `research_log.md` (한 줄 = 한 라운드) |
+| 수학 자문 질문·답변 | `questions/OPEN.md` · `questions/ANSWERED.md` |
+| 사람 insight 상태 | `knowledge/insights/ledger.jsonl` (`python insight_ledger.py list`) |
+| **자율 토론 루프의 미승격 성과** | `knowledge/dialogue_research/` — 권한 `UNASSESSED_DIALOGUE_ONLY`. 재현된 항목은 `python scripts/verify_dialogue_claims.py` |
+| 정리·삭제 작업 | `docs/REFACTOR_BACKLOG.md` |
+| 원문 PDF 반입 | `knowledge/papers/README.md` |
+
+**웹 검색이 필요하면**: `WebSearch` 는 US 전용이라 이 환경에서 `unavailable` 이 뜬다.
+대신 `WebFetch` 로 `https://html.duckduckgo.com/html/?q=<질의>` 를 열면 결과 목록이 그대로
+나온다. 논문 본문은 arXiv 의 `ar5iv.labs.arxiv.org/html/<id>` 가 PDF 보다 훨씬 잘 읽힌다.
+(QQ-0001 을 이 경로로 해결했다.)
+
+**ChatGPT 는 `questions/OPEN.md` 를 읽고 각 항목의 `### 답변` 절을 채운다.** 답변에는
+등급(PROVEN~SPECULATION)과 문헌 확인 수준(FULLTEXT/ABSTRACT_ONLY/SECONDHAND)을 반드시
+붙인다 — 규약은 `questions/README.md`.
 
 ## 절대 불변 조건 (요약 — 상세는 CLAUDE.md)
 
@@ -26,6 +49,36 @@
    `rank2_uniform`의 알려진 non-convex 특이 사례는 "버그"가 아니므로 고치지 말 것.
 4. `criteria.py`의 `REGISTRY`에 없는 이름을 조건으로 쓰지 말 것.
 5. `docs/DECISIONS.md`는 append-only.
+6. `invariants.py`의 불변량은 **판정 권한이 없다.** 라벨 `witness`(frozen)를 덮어쓰거나
+   폐기하려는 변경, 어휘를 `criteria`의 `target` 모드로 승격시키는 변경은 자동 기각.
+7. 불변성 등급(`conjecture._invariance_of`)이 미확인을 하위 등급으로 강등하는 동작을
+   "보수적이라"는 이유로 완화하지 말 것 — 대표원소 성질이 궤도 성질로 승격되는 것이
+   이 프로젝트에서 가장 위험한 거짓 결론이다.
+8. 실현가능성을 결론에 반영할 것. 비실현 witness는 ν(d) 상한을 증명하지 않는다.
+
+## 연구 규율 (정리 발굴 파이프라인 — 0028)
+
+1. 계산으로 얻은 정리를 주장할 때는 **어떤 검사기가 그것을 뒷받침하는지** 반드시 밝힌다.
+2. 다음을 절대 섞지 않는다: 증명된 사실 / 계산으로 확인된 유한 사례
+   (`EXHAUSTED_ON_SCOPE`) / 수치적 증거 / 휴리스틱 / 추측 / LLM 발언.
+3. 보조정리를 제안하면 **다듬기 전에 먼저 반증을 시도**한다 (`falsify.py`).
+4. 후보를 제안하면 가능한 한 기계가독 형태로 바꾼다 (`reasoner.encode_chirotope`).
+5. 실패한 아이디어도 기록한다 (`research_log.md`, 어휘는 삭제가 아니라 폐기).
+6. 시험 중인 수학적 정의를 조용히 바꾸지 않는다.
+7. 후보가 계속 실패한다는 이유로 검증기를 고치지 않는다.
+8. 반증 가능하고 계산으로 시험 가능한 중간 추측을 우선한다.
+9. 추상 OM을 쓸 때는 실현가능성을 항상 명시적으로 추적한다.
+10. 실험을 나중에 재현할 수 있을 만큼의 provenance를 남긴다 (`experiments/run_*/manifest.json`).
+
+## 인간 수학 insight 처리 (0031)
+
+- 사용자가 아이디어의 `기록`·`검증`·`반영`·`탐색 적용`을 요청하면
+  `insight_ledger.py`와 `docs/HUMAN_INSIGHT_PROTOCOL.md`를 사용한다.
+- 대화 내용만으로 탐색 제약이나 pruning을 활성화하지 않는다. 먼저 `PROPOSED`로 기록하고
+  형식화·반증·evidence 단계를 거친다.
+- `SUPPORTED`/`REFUTED`에는 재현 가능한 evidence 참조가, `INTEGRATED`에는 evidence와
+  구현 참조가 모두 필요하다. 에이전트의 동의나 이름은 evidence가 아니다.
+- Issue·PR·HANDOFF에는 관련 `HI-NNNN`을 적어 Claude와 Codex가 같은 맥락을 재구성하게 한다.
 
 ## Codex의 역할과 접근 방식 (COLLABORATION.md와 일치)
 

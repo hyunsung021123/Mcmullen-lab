@@ -413,4 +413,9 @@ def _self_test() -> int:
 
 
 if __name__ == "__main__":
+    # 주의: 이 import 는 **이 모듈의** main 에만 있어야 한다. 위 REPLAY_TEMPLATE 안의
+    # main 블록에 넣으면 생성된 replay.py 가 저장소 모듈(console)에 의존하게 되어,
+    # "저장소 비의존 재검증"이라는 certificate 의 신뢰 근거가 깨진다 (0029 에서 실측).
+    from console import enable_utf8_stdout
+    enable_utf8_stdout()
     sys.exit(main())

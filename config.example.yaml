@@ -8,8 +8,9 @@ om_class: uniform     # 탐색 공간(클래스):
                       #   uniform            - 모든 uniform OM (rank d+1, 전수)
                       #   realizable_uniform - 실현가능 uniform OM (무작위 점배치, d>=3 빠름)
                       #   rank2_uniform      - rank-2 uniform OM (REOM 실험 기반; rank=2 고정)
+                      #   extended_lawrence_r2 - rank-2 layer union (짝수 rank, realizable)
                       #   cyclic             - 순환다면체 OM (기준선/시드)
-                      #   lawrence           - 소켓(REOM 인코딩 연결 시 동작)
+                      #   lawrence           - 고전 rank-1 Lawrence용 legacy 소켓(미연결)
                       #   `python run.py --list-classes` 로 전체 확인
 n_min: 6              # 탐색 시작 원소 수 (생략 시 2d+2)
 n_max: 6              # 탐색 최대 원소 수 (생략 시 U+1)
@@ -22,6 +23,13 @@ dedup: true           # 재배향-동치 중복 제거(작은 n 권장). 대규�
 max_candidates_per_round: 300
 record_accepted: true # witness 아니어도 '채택된' 후보를 일부 기록(대시보드 표시용)
 accepted_cap: 30
+
+# extended_lawrence_r2 전용 선택 옵션. 주석 해제 전 om_class도 같이 바꾸세요.
+# class_options:
+#   interval_heuristic: sampled    # off(기본) | sampled | exhaustive
+#   interval_pool_size: 8          # 이 크기의 후보 묶음 안에서 map score로 순서만 변경
+#   interval_reorientations: 64    # sampled 모드의 공통 재배향 표본 수
+# 중요: 이 휴리스틱은 후보를 제거하지 않으며 witness 판정에는 사용되지 않습니다.
 
 # ---- 연구 루프(리뷰 반영) ----
 discovery_enabled: true   # 검증된 witness 구조를 자동 분석해 발견/제안 편향 도출(학습 루프)

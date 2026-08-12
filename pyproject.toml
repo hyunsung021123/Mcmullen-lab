@@ -14,22 +14,31 @@ dependencies = []
 
 [project.optional-dependencies]
 # 기본 실행(백트래킹/랜덤 백엔드, CLI 결과 저장)은 표준 라이브러리만 필요.
-ui = ["streamlit>=1.30", "pandas>=2.0"]
 config = ["pyyaml>=6.0"]
 z3 = ["z3-solver>=4.12"]
 llm = ["requests>=2.31"]
-all = ["mcmullen-lab[ui,config,z3,llm]"]
+all = ["mcmullen-lab[config,z3,llm]"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
 mcmullen-lab = "run:main"
+mcmullen-cycle = "research_cycle:main"
+mcmullen-insights = "insight_ledger:main"
 
 [tool.setuptools]
 py-modules = [
     "om_core", "om_classes", "criteria", "generator",
+    "extended_lawrence", "interval_maps",
     "discovery", "memory", "theorist", "store",
-    "search", "progress", "manager", "run", "ui_helpers", "autonomous_ui",
+    "search", "progress", "manager", "run",
     "reorientation_cover", "certificate", "certificate_verify",
     "benchmark_coverage", "reorientation_sat", "cegis_search",
-    "symmetry_reduction", "research_ir", "process_verifier", "evidence_db", "step_ranker", "translations", "certificate_export", "witness_analysis", "research_manager",
+    "symmetry_reduction", "research_ir", "process_verifier", "evidence_db", "insight_ledger", "step_ranker", "translations", "certificate_export", "witness_analysis", "research_manager",
+    # 정리 발굴 파이프라인 (0028)
+    "console", "sandbox", "invariants", "conjecture", "falsify", "reasoner",
+    "research_cycle",
+    # GP 돌연변이 공간 (0001-d5project 응답 채택분)
+    "mutation_lab", "covering_cegis", "layer_search",
+    # 순수 rank-1 Lawrence 부호공간 (탐색 결함 보정) + 논문의 travel 기계
+    "lawrence_signs", "lawrence_travel", "lawrence_cegis",
 ]
