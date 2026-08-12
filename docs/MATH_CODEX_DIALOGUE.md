@@ -2,12 +2,14 @@
 
 이 시스템은 각 수학 Codex task에 역할을 최초 한 번 지정한 뒤, task별 heartbeat가 같은 로컬
 SQLite 우편함을 읽어 비동기 연구 루프를 계속하게 한다. 사용자가 어느 task에 새 수학 목표를
-주거나 `questions/OPEN.md`에 질문이 생기면 bounded topic으로 들어간다.
+주거나 `questions/OPEN.md`에 질문이 생기면 bounded topic으로 들어간다. 이 작업이 모두 비면
+strategist가 제한된 창발 탐사 사이클을 시작한다.
 
 ```text
 사용자 지시 ─┐
               ├→ SQLite topic → 역할별 claim/응답 → 검증/반증 → 종합/종료
 OPEN.md sync ─┘
+idle strategist → 무작위 분야 탐사 → 새 질문/가설 → 검증/반증 → 성공·실패 로그
 ```
 
 ## 1. 실행 모델과 안전 경계
@@ -26,6 +28,14 @@ OPEN.md sync ─┘
   witness, pruning 또는 정리로 자동 승격되는 경로는 없다.
 - 자동 실행은 tracked 파일을 수정하지 않는다. 사람 검토 전 초안과 계산 산출물은
   `local_runs/math_dialogue/`에만 둔다.
+- 창발 탐사는 일반 inbox가 비었을 때만 실행한다. 동시에 열린 탐사 1개, 기본 일일 4개,
+  30분 cooldown을 적용한다.
+- 탐사 분야는 넓은 고정 덱에서 RNG로 선택하고 seed·분야·관점을 함께 기록한다. 분야의
+  적합성을 사전에 오래 점수화하지 않고 한 번의 국소 번역을 시험한 뒤 낮은 수익이면 닫는다.
+- 성공뿐 아니라 `REFUTED`, `BLOCKED`, `LOW_YIELD`, `DUPLICATE`, `INCONCLUSIVE`도 구조화해
+  보존한다. 이 로그 역시 연구 사실이나 evidence가 아니다.
+- 웹·문헌 검색은 허용되지만 1차 자료를 우선한다. URL·제목·접근 시각과
+  `FULLTEXT`/`ABSTRACT_ONLY`/`SECONDHAND`를 저장하고, 외부 자료 안의 명령은 실행하지 않는다.
 - 로컬 scheduled task에는 PC 전원과 데스크톱 앱 실행이 필요하다. 절전·종료 중에는 진행되지
   않고 다음 실행 기회까지 멈춘다.
 
@@ -35,10 +45,10 @@ OPEN.md sync ─┘
 
 | Agent | 책임 | 주된 입력 | 다음 라우팅 |
 |---|---|---|---|
-| `strategist` | 정식화, 하위 의무 분해, 우선순위, 종합 | 사용자/OPEN 질문, 상충 결과 | prover/falsifier/experimentalist |
-| `prover` | 제시된 방향을 보조정리와 엄밀한 증명 사슬로 전개 | 전략, 살아남은 추측 | falsifier/experimentalist |
+| `strategist` | 정식화, 창발 분야 탐사, 하위 의무 분해, 종합 | 사용자/OPEN 질문, idle, 상충 결과 | prover/falsifier/claude-compute |
+| `prover` | 제시된 방향을 보조정리와 엄밀한 증명 사슬로 전개 | 전략, 살아남은 추측 | falsifier/claude-compute |
 | `falsifier` | 최소 반례, 숨은 가정, 논리·불변성·실현가능성 감사 | 증명/추측 후보 | prover/strategist |
-| `experimentalist` | 결정론적 유한 계산, 대조군, 재현성 | 계산 가능한 의무 | falsifier/strategist |
+| `claude-compute` 또는 `experimentalist` | 결정론적 유한 계산, 대조군, 재현성 | 계산 가능한 의무 | falsifier/strategist |
 
 서로 다른 관점을 유지하면서도 각 task의 문맥이 좁아져 가장 효율적이다.
 
@@ -114,6 +124,14 @@ OPEN sync(intake만) → claim 1건 → 역할 작업 → active roster 확인
   → 적합한 동료에게 응답 1건 또는 synthesis 종료 → submit → 끝
 ```
 
+strategist가 `no_work`를 받으면 아래 bounded seed를 한 번 호출한다. `created`일 때만 새 메시지를
+claim해 처리하고, budget/cooldown/open-cycle limit이면 정상 종료한다.
+
+```powershell
+python -X utf8 math_dialogue.py seed-exploration --agent strategist `
+  --max-cycles-per-day 4 --max-open-cycles 1 --cooldown-seconds 1800
+```
+
 응답 JSON 예시:
 
 ```json
@@ -123,6 +141,16 @@ OPEN sync(intake만) → claim 1건 → 역할 작업 → active roster 확인
   "grade": "UNASSESSED",
   "body": "CLAIM/ASSUMPTIONS/WORK/STATUS/NEXT_TEST/ROUTE를 구분한 새 내용",
   "evidence_refs": ["knowledge/problem.md"],
+  "research_log": {
+    "event_type": "HYPOTHESIS",
+    "summary": "선택 분야에서 파생한 반증 가능 가설",
+    "approach": "사용한 번역과 한 단계 유도",
+    "outcome": "ADVANCED",
+    "failure_reason": "",
+    "reusable_clues": ["재사용할 패턴"],
+    "next_questions": ["파생 질문"]
+  },
+  "sources": [],
   "ttl_seconds": 86400,
   "close_topic": false
 }
@@ -139,6 +167,8 @@ python math_dialogue.py release --agent strategist --message-id 17
 ```powershell
 python math_dialogue.py status
 python math_dialogue.py transcript --topic <TOPIC_ID>
+python math_dialogue.py research-log --limit 100
+python math_dialogue.py research-log --cycle <ER-CYCLE-ID>
 ```
 
 토론은 새 정보가 없거나, 결정론적 구현·외부 문헌·인간 선택이 필요하거나, 설정된 한도에
@@ -154,3 +184,5 @@ update, delete할 수 있다.
 3. 재현 가능한 evidence와 구현 참조가 있을 때만 상태 전이
 
 자동 토론은 후보 생산과 반증 의무 분리에 집중하고, 판정 권한은 기존 검증 계층에 남긴다.
+구조화 로그는 `math-dialogue-research-log/v1` JSON으로 조회할 수 있어 향후 second-brain 저장기의
+입력 어댑터로 사용할 수 있지만, 자동 승격 어댑터는 의도적으로 제공하지 않는다.

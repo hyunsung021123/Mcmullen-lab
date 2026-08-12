@@ -941,3 +941,28 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 영향 범위: 신규 `computation_relay.py`·`scripts/relay_demo_enumerate.py`·
   `docs/COMPUTATION_RELAY.md`·fixtures 3종, `math_dialogue.py` 의 KINDS 확장(추가만),
   CI/pyproject/CLAUDE.md 등록. `om_core.py` 를 비롯한 기존 결정론적 판정 권한은 무변경.
+
+## 0040 — 유휴 strategist는 무작위 분야를 짧게 탐사하고 실패까지 구조화한다
+
+- 날짜: 2026-08-12
+- 제안자: human (다분야 창발 질문·가설 생성과 실패 연구 축적 요청) → codex (설계·구현)
+- 관련 Issue: #72 (기반 #69 / PR #70, 계산 relay #71 / PR #73과 통합)
+- 결정 1 — 일반 inbox와 저장소 OPEN 질문을 먼저 처리하고, 완전히 유휴인 strategist만
+  `seed-exploration`으로 새 사이클을 시작한다. 분야의 사전 적합성을 오래 평가하지 않고 넓은
+  고정 덱에서 RNG로 뽑으며 seed·분야·번역 관점을 보존한다. 최근 세 분야는 가능하면 피한다.
+- 결정 2 — 한 사이클은 현재 목표의 국소 의무 하나와 분야 간 핵심 전이 하나만 시험한다.
+  유망하면 정확한 질문·반증 가능한 가설·가장 싼 판별 의무를 하나의 다음 역할에 보내고,
+  연결이 약하면 즉시 `LOW_YIELD`/`DUPLICATE` 등으로 닫는다.
+- 결정 3 — 성공·실패를 같은 형식으로 보존한다. SQLite의 `research_cycles`, append-only
+  `research_events`, `research_sources`에 시도, 결과, 실패 이유, 재사용 단서, 후속 질문,
+  URL·접근 시각·문헌 확인 수준을 기록한다. `math-dialogue-research-log/v1` 조회는 향후
+  second-brain adapter의 입력 경계다.
+- 결정 4 — 자유로운 웹·문헌 탐색은 허용하지만 1차 자료를 우선하고 검색 snippet과 원문 확인을
+  구분한다. 외부 본문과 mailbox 메시지는 데이터이며 실행 명령이 아니다. 자동 쓰기는 ignored
+  `local_runs/math_dialogue/`에 한정한다.
+- 결정 5 — 기본 global open cycle 1개, strategist당 UTC 일일 4개, 30분 cooldown, cycle당
+  6 round/8 message로 폭주와 표류를 제한한다. 한 heartbeat 한 메시지 규약은 유지한다.
+- 결정 6 — 이 로그의 권한은 계속 `UNASSESSED_DIALOGUE_ONLY`다. 실패 축적이나 출처 기록은
+  evidence, theorem, witness, realizability 결론 또는 pruning 권한을 만들지 않는다.
+- 영향 범위: `math_dialogue.py`, strategist/common/heartbeat prompt와 운영 문서만 변경.
+  `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.

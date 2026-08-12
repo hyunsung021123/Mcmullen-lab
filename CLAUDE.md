@@ -56,7 +56,7 @@ certificate_export.py   certificate 번들 export — md/tex/lean/독립 replay.
 certificate.py          witness certificate v1 생성 + Markdown/KaTeX 보고서 (Epic #37)
 certificate_verify.py   certificate 독립 검증기 — coverage 로직 미공유, om_core 만 의존
 benchmark_coverage.py   legacy(B0) vs coverage(B1) 정확성/성능 벤치마크
-math_dialogue.py        여러 로컬 수학 Codex task의 SQLite 우편함 — 토론 전용, 판정 권한 없음
+math_dialogue.py        로컬 수학 task SQLite 우편함 + bounded 창발 탐사 로그 — 판정 권한 없음
 computation_relay.py    수학 세션 → 계산 세션 계산 의무 전달 — computation-request/result v1,
                         검토된 plan 의 commands 만 실행, trust_class 는 증거에서 도출.
                         request 는 데이터일 뿐 실행 대상이 아니다 (docs/COMPUTATION_RELAY.md)

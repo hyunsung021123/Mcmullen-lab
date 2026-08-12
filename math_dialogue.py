@@ -25,7 +25,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
+import secrets
 import sqlite3
 import sys
 import tempfile
@@ -37,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 DEFAULT_DB = Path(os.environ.get(
@@ -78,6 +81,36 @@ GRADES = {
 MESSAGE_STATES = {"queued", "leased", "done", "expired"}
 TOPIC_STATES = {"open", "closed"}
 
+# 적합성을 오래 논증한 뒤 분야를 고르는 대신, 넓은 덱에서 먼저 뽑아 짧게 시험한다.
+# key/label/lens를 DB에 함께 보존해 선택 자체도 나중에 재현·분석할 수 있게 한다.
+EXPLORATION_DOMAIN_DECK = (
+    ("extremal-combinatorics", "극값 조합론", "금지 구조·밀도 임계값·최소 반례로 번역"),
+    ("matroid-theory", "매트로이드 이론", "minor·duality·rank 함수·excluded minor로 번역"),
+    ("discrete-geometry", "이산기하", "배치·분리·Radon/Helly형 국소 조건으로 번역"),
+    ("convex-geometry", "볼록기하", "극점·쌍대성·지지 초평면·재배향 궤도로 번역"),
+    ("graph-theory", "그래프 이론", "국소 obstruction·cut/flow·tree decomposition으로 번역"),
+    ("order-theory", "순서론·격자론", "부분순서·closure·Möbius/격자 불변량으로 번역"),
+    ("algebraic-topology", "대수적 위상수학", "복합체·homology·nerve·obstruction으로 번역"),
+    ("commutative-algebra", "가환대수", "Stanley–Reisner ideal·syzygy·Hilbert 자료로 번역"),
+    ("algebraic-geometry", "대수기하·실현공간", "방정식계·퇴화·realization space 성분으로 번역"),
+    ("group-actions", "군 작용·표현론", "orbit·stabilizer·character·대칭 축소로 번역"),
+    ("probabilistic-method", "확률론적 방법", "무작위 구성·첫/둘째 모멘트·국소 보조정리로 번역"),
+    ("information-theory", "정보이론·부호이론", "entropy·code distance·압축 불가능성으로 번역"),
+    ("optimization", "조합최적화·선형/반정정부호 최적화", "relaxation·duality gap·분리 oracle로 번역"),
+    ("constraint-solving", "SAT·CSP·모델검사", "기계가독 제약·unsat core·bounded model로 번역"),
+    ("discrete-morse", "이산 Morse 이론", "collapse·critical cell·위상적 단순화로 번역"),
+    ("category-theory", "범주론·함자적 관점", "보존되는 구조·자연성·보편 성질로 번역"),
+)
+RESEARCH_EVENT_TYPES = {
+    "QUESTION", "HYPOTHESIS", "ATTEMPT", "CRITIQUE", "COMPUTATION",
+    "SOURCE_NOTE", "FAILURE", "PIVOT", "SYNTHESIS",
+}
+RESEARCH_OUTCOMES = {
+    "OPEN", "ADVANCED", "REFUTED", "BLOCKED", "LOW_YIELD", "DUPLICATE",
+    "INCONCLUSIVE",
+}
+SOURCE_VERIFICATION_LEVELS = {"FULLTEXT", "ABSTRACT_ONLY", "SECONDHAND"}
+
 
 def _now() -> float:
     return time.time()
@@ -92,6 +125,11 @@ def _iso(ts: float | None) -> str | None:
 def _topic_id() -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"T-{stamp}-{uuid.uuid4().hex[:6]}"
+
+
+def _cycle_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"ER-{stamp}-{uuid.uuid4().hex[:6]}"
 
 
 def _connect(db_path: Path | str = DEFAULT_DB) -> sqlite3.Connection:
@@ -173,6 +211,61 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 ON messages(recipient, status, created_at, id);
             CREATE INDEX IF NOT EXISTS topic_order
                 ON messages(topic_id, id);
+
+            CREATE TABLE IF NOT EXISTS research_cycles (
+                id TEXT PRIMARY KEY,
+                topic_id TEXT NOT NULL UNIQUE REFERENCES topics(id),
+                agent TEXT NOT NULL REFERENCES agents(name),
+                domain_key TEXT NOT NULL,
+                domain_label TEXT NOT NULL,
+                domain_lens TEXT NOT NULL,
+                rng_seed INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN
+                    ('active', 'advanced', 'refuted', 'blocked', 'low_yield',
+                     'duplicate', 'inconclusive')),
+                created_at REAL NOT NULL,
+                closed_at REAL,
+                final_summary TEXT,
+                failure_reason TEXT,
+                reusable_clues TEXT NOT NULL DEFAULT '[]',
+                next_questions TEXT NOT NULL DEFAULT '[]'
+            );
+
+            CREATE TABLE IF NOT EXISTS research_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id TEXT NOT NULL REFERENCES topics(id),
+                cycle_id TEXT REFERENCES research_cycles(id),
+                message_id INTEGER NOT NULL REFERENCES messages(id),
+                agent TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                approach TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                failure_reason TEXT,
+                reusable_clues TEXT NOT NULL DEFAULT '[]',
+                next_questions TEXT NOT NULL DEFAULT '[]',
+                created_at REAL NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS one_research_event_per_message
+                ON research_events(message_id);
+            CREATE INDEX IF NOT EXISTS research_event_order
+                ON research_events(cycle_id, created_at, id);
+
+            CREATE TABLE IF NOT EXISTS research_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id TEXT NOT NULL REFERENCES topics(id),
+                cycle_id TEXT REFERENCES research_cycles(id),
+                message_id INTEGER NOT NULL REFERENCES messages(id),
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                accessed_at REAL NOT NULL,
+                verification_level TEXT NOT NULL,
+                note TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                UNIQUE(message_id, url)
+            );
+            CREATE INDEX IF NOT EXISTS research_source_order
+                ON research_sources(cycle_id, accessed_at, id);
             """
         )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(topics)")}
@@ -374,6 +467,191 @@ def sync_open_questions(open_path: Path | str, recipient: str, *, min_active_age
             "active_agents": active, "created": created}
 
 
+def seed_exploration(agent: str, *, seed: int | None = None,
+                     max_cycles_per_day: int = 4, max_open_cycles: int = 1,
+                     cooldown_seconds: int = 1800, max_rounds: int = 6,
+                     max_messages: int = 8,
+                     domain_deck: tuple[tuple[str, str, str], ...] = EXPLORATION_DOMAIN_DECK,
+                     db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """유휴 strategist에게 재현 가능한 무작위 분야 탐사 한 건을 원자적으로 투입한다.
+
+    분야 선택은 최근 세 번과 겹치지 않는 후보 중 RNG로 수행한다. 이는 분야의 적합성을
+    사전에 점수화하는 장치가 아니라 단순 다양성 장치다. 열린 사이클·일일 예산·cooldown과
+    기존 inbox를 같은 트랜잭션에서 검사하므로 동시 heartbeat도 폭주시키지 못한다.
+    """
+    if (max_cycles_per_day < 1 or max_open_cycles < 1 or cooldown_seconds < 0 or
+            max_rounds < 1 or max_messages < 1):
+        raise ValueError("탐사 예산과 한도는 양수이고 cooldown은 0 이상이어야 함")
+    if not domain_deck:
+        raise ValueError("탐사 분야 덱은 비어 있을 수 없음")
+    keys = [item[0] for item in domain_deck]
+    if len(keys) != len(set(keys)):
+        raise ValueError("탐사 분야 key는 서로 달라야 함")
+    for item in domain_deck:
+        if len(item) != 3 or not all(isinstance(value, str) and value.strip() for value in item):
+            raise ValueError("각 탐사 분야는 비어 있지 않은 key/label/lens 삼중항이어야 함")
+    if seed is None:
+        seed = secrets.randbelow(2**63 - 1)
+    if not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise ValueError("seed는 0 이상 2^63 미만 정수여야 함")
+
+    init_db(db_path)
+    with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            now = _now()
+            registered = conn.execute(
+                "SELECT active FROM agents WHERE name=?", (agent,)
+            ).fetchone()
+            if registered is None or not registered["active"]:
+                raise KeyError(f"활성 agent가 아님: {agent}")
+            conn.execute("UPDATE agents SET last_seen=? WHERE name=?", (now, agent))
+
+            # TTL 만료나 중단된 heartbeat 뒤에 열린 cycle이 영원히 전역 한도를 점유하지
+            # 않도록, 더 처리할 메시지가 없는 cycle은 보수적으로 INCONCLUSIVE 종료한다.
+            conn.execute(
+                """UPDATE research_cycles SET status='inconclusive', closed_at=?,
+                   final_summary=COALESCE(final_summary,
+                       'topic이 먼저 닫혀 탐사 사이클을 보수적으로 종료했다.'),
+                   failure_reason=COALESCE(failure_reason, 'topic_already_closed')
+                   WHERE status='active' AND topic_id IN (
+                       SELECT id FROM topics WHERE status='closed'
+                   )""",
+                (now,),
+            )
+            abandoned = conn.execute(
+                """SELECT c.id, c.topic_id FROM research_cycles c
+                   JOIN topics t ON t.id=c.topic_id
+                   WHERE c.status='active' AND t.status='open'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messages m
+                         WHERE m.topic_id=c.topic_id
+                           AND m.status IN ('queued', 'leased')
+                     )"""
+            ).fetchall()
+            for row in abandoned:
+                summary = "처리 가능한 메시지가 없어 탐사 사이클을 보수적으로 종료했다."
+                conn.execute(
+                    """UPDATE research_cycles SET status='inconclusive', closed_at=?,
+                       final_summary=?, failure_reason=? WHERE id=?""",
+                    (now, summary, "heartbeat 중단 또는 메시지 TTL 만료", row["id"]),
+                )
+                conn.execute(
+                    """UPDATE topics SET status='closed', closed_at=?,
+                       close_reason='exploration_abandoned', final_by='emergent-loop',
+                       final_kind='SYNTHESIS', final_grade='UNASSESSED',
+                       final_summary=? WHERE id=?""",
+                    (now, summary, row["topic_id"]),
+                )
+
+            pending = conn.execute(
+                """SELECT COUNT(*) AS n
+                   FROM messages m JOIN topics t ON t.id=m.topic_id
+                   WHERE m.recipient=? AND m.status IN ('queued', 'leased')
+                     AND t.status='open'""",
+                (agent,),
+            ).fetchone()["n"]
+            if pending:
+                conn.commit()
+                return {"status": "inbox_not_empty", "pending_messages": pending,
+                        "created": None}
+
+            open_rows = conn.execute(
+                """SELECT id, topic_id, domain_key, created_at FROM research_cycles
+                   WHERE status='active' ORDER BY created_at"""
+            ).fetchall()
+            if len(open_rows) >= max_open_cycles:
+                conn.commit()
+                return {"status": "open_cycle_limit", "open_cycles": len(open_rows),
+                        "created": None,
+                        "existing_cycle_id": str(open_rows[0]["id"])}
+
+            day_start = datetime.fromtimestamp(now, timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).timestamp()
+            today_count = conn.execute(
+                """SELECT COUNT(*) AS n FROM research_cycles
+                   WHERE agent=? AND created_at>=?""",
+                (agent, day_start),
+            ).fetchone()["n"]
+            if today_count >= max_cycles_per_day:
+                conn.commit()
+                return {"status": "daily_budget", "cycles_today": today_count,
+                        "created": None}
+
+            last = conn.execute(
+                """SELECT created_at FROM research_cycles
+                   WHERE agent=? ORDER BY created_at DESC LIMIT 1""",
+                (agent,),
+            ).fetchone()
+            if last is not None and now - last["created_at"] < cooldown_seconds:
+                remaining = int(cooldown_seconds - (now - last["created_at"]))
+                conn.commit()
+                return {"status": "cooldown", "retry_after_seconds": max(1, remaining),
+                        "created": None}
+
+            recent = {row["domain_key"] for row in conn.execute(
+                """SELECT domain_key FROM research_cycles
+                   WHERE agent=? ORDER BY created_at DESC LIMIT 3""",
+                (agent,),
+            )}
+            candidates = [item for item in domain_deck if item[0] not in recent]
+            if not candidates:
+                candidates = list(domain_deck)
+            domain_key, domain_label, domain_lens = random.Random(seed).choice(candidates)
+
+            cycle_id = _cycle_id()
+            topic_id = _topic_id()
+            source_key = f"emergent-research::{cycle_id}"
+            conn.execute(
+                """INSERT INTO topics
+                   (id, title, created_by, status, max_rounds, max_messages,
+                    created_at, source_key)
+                   VALUES (?, ?, ?, 'open', ?, ?, ?, ?)""",
+                (topic_id, f"창발 탐사 — {domain_label}", agent, max_rounds,
+                 max_messages, now, source_key),
+            )
+            conn.execute(
+                """INSERT INTO research_cycles
+                   (id, topic_id, agent, domain_key, domain_label, domain_lens,
+                    rng_seed, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)""",
+                (cycle_id, topic_id, agent, domain_key, domain_label, domain_lens,
+                 seed, now),
+            )
+            body = (
+                "EMERGENT_RESEARCH_CYCLE v1\n"
+                f"CYCLE_ID: {cycle_id}\nRNG_SEED: {seed}\n"
+                f"DOMAIN: {domain_label} ({domain_key})\nLENS: {domain_lens}\n"
+                "CONTEXT: AGENTS.md, docs/RESEARCH_STATUS.md, questions/OPEN.md와 존재하면 "
+                "docs/STATE.md의 현재 목표·죽은 길을 읽어라.\n"
+                "MISSION: 이 분야가 적합한지 오래 정당화하지 말고, 현재 목표의 한 국소 의무를 "
+                "이 관점으로 즉시 번역해 한 번만 깊게 밀어라. 정확한 새 질문 1~3개, 반증 가능한 "
+                "가설 또는 방향 1개, 가장 싼 판별 시험을 만든다. 실질적 연결이 없거나 이미 죽은 "
+                "길이면 LOW_YIELD/DUPLICATE로 실패 이유와 재사용 단서를 기록하고 닫아라. "
+                "유망하면 prover/falsifier/활성 계산 담당에게 넘겨라. 모든 산출물은 UNASSESSED다."
+            )
+            message_id = _post_in_tx(
+                conn, topic_id=topic_id, sender="emergent-loop", recipient=agent,
+                kind="DIRECTION", grade="UNASSESSED", body=body,
+                evidence_refs=["docs/RESEARCH_STATUS.md"], parent_id=None,
+                round_no=1, ttl_seconds=86400,
+            )
+            conn.commit()
+            return {
+                "status": "created",
+                "created": {
+                    "cycle_id": cycle_id, "topic_id": topic_id, "agent": agent,
+                    "message_id": message_id, "rng_seed": seed,
+                    "domain_key": domain_key, "domain_label": domain_label,
+                    "domain_lens": domain_lens,
+                },
+            }
+        except Exception:
+            conn.rollback()
+            raise
+
+
 def _validate_message(kind: str, grade: str, body: str, evidence_refs: list[str]) -> None:
     if kind not in KINDS:
         raise ValueError(f"kind는 다음 중 하나여야 함: {sorted(KINDS)}")
@@ -389,6 +667,141 @@ def _evidence_refs(value: Any) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError("evidence_refs는 문자열 목록이어야 함")
     return value
+
+
+def _nonempty_string_list(value: Any, field: str) -> list[str]:
+    if (not isinstance(value, list) or
+            not all(isinstance(item, str) and item.strip() for item in value)):
+        raise ValueError(f"{field}는 비어 있지 않은 문자열 목록이어야 함")
+    return [item.strip() for item in value]
+
+
+def _research_log(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("research_log는 객체여야 함")
+    allowed = {
+        "event_type", "summary", "approach", "outcome", "failure_reason",
+        "reusable_clues", "next_questions",
+    }
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError(f"research_log의 알 수 없는 필드: {sorted(unknown)}")
+    event_type = str(value.get("event_type", "")).strip().upper()
+    outcome = str(value.get("outcome", "")).strip().upper()
+    summary = str(value.get("summary", "")).strip()
+    approach = str(value.get("approach", "")).strip()
+    failure_reason = str(value.get("failure_reason", "")).strip()
+    if event_type not in RESEARCH_EVENT_TYPES:
+        raise ValueError(f"research_log.event_type은 다음 중 하나여야 함: {sorted(RESEARCH_EVENT_TYPES)}")
+    if outcome not in RESEARCH_OUTCOMES:
+        raise ValueError(f"research_log.outcome은 다음 중 하나여야 함: {sorted(RESEARCH_OUTCOMES)}")
+    if not summary or not approach:
+        raise ValueError("research_log.summary와 approach는 비어 있을 수 없음")
+    if outcome in {"BLOCKED", "LOW_YIELD"} and not failure_reason:
+        raise ValueError(f"{outcome}에는 failure_reason이 필요함")
+    return {
+        "event_type": event_type,
+        "summary": summary,
+        "approach": approach,
+        "outcome": outcome,
+        "failure_reason": failure_reason,
+        "reusable_clues": _nonempty_string_list(
+            value.get("reusable_clues", []), "research_log.reusable_clues"
+        ),
+        "next_questions": _nonempty_string_list(
+            value.get("next_questions", []), "research_log.next_questions"
+        ),
+    }
+
+
+def _research_sources(value: Any) -> list[dict[str, str]]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 20:
+        raise ValueError("sources는 최대 20개의 객체 목록이어야 함")
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("sources의 각 항목은 객체여야 함")
+        allowed = {"url", "title", "verification_level", "note"}
+        unknown = set(item) - allowed
+        if unknown:
+            raise ValueError(f"source의 알 수 없는 필드: {sorted(unknown)}")
+        url = str(item.get("url", "")).strip()
+        title = str(item.get("title", "")).strip()
+        level = str(item.get("verification_level", "")).strip().upper()
+        note = str(item.get("note", "")).strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("source.url은 http(s) URL이어야 함")
+        if not title or not note:
+            raise ValueError("source.title과 note는 비어 있을 수 없음")
+        if level not in SOURCE_VERIFICATION_LEVELS:
+            raise ValueError(
+                f"source.verification_level은 다음 중 하나여야 함: "
+                f"{sorted(SOURCE_VERIFICATION_LEVELS)}"
+            )
+        if url in seen:
+            raise ValueError(f"한 응답에서 source URL이 중복됨: {url}")
+        seen.add(url)
+        normalized.append({"url": url, "title": title,
+                           "verification_level": level, "note": note})
+    return normalized
+
+
+def _record_research_in_tx(conn: sqlite3.Connection, *, msg: sqlite3.Row,
+                           agent: str, response: dict[str, Any], now: float,
+                           close_topic: bool) -> None:
+    """응답과 구조화 연구 로그를 같은 transaction에 기록한다."""
+    cycle = conn.execute(
+        "SELECT * FROM research_cycles WHERE topic_id=?", (msg["topic_id"],)
+    ).fetchone()
+    raw_log = response.get("research_log")
+    if cycle is not None and raw_log is None:
+        raise ValueError("창발 탐사 응답에는 research_log가 필요함")
+    log = _research_log(raw_log) if raw_log is not None else None
+    sources = _research_sources(response.get("sources", []))
+    cycle_id = str(cycle["id"]) if cycle is not None else None
+
+    if log is not None:
+        conn.execute(
+            """INSERT INTO research_events
+               (topic_id, cycle_id, message_id, agent, event_type, summary,
+                approach, outcome, failure_reason, reusable_clues,
+                next_questions, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (msg["topic_id"], cycle_id, msg["id"], agent, log["event_type"],
+             log["summary"], log["approach"], log["outcome"],
+             log["failure_reason"] or None,
+             json.dumps(log["reusable_clues"], ensure_ascii=False),
+             json.dumps(log["next_questions"], ensure_ascii=False), now),
+        )
+    for source in sources:
+        conn.execute(
+            """INSERT INTO research_sources
+               (topic_id, cycle_id, message_id, url, title, accessed_at,
+                verification_level, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (msg["topic_id"], cycle_id, msg["id"], source["url"], source["title"],
+             now, source["verification_level"], source["note"], now),
+        )
+
+    if cycle is not None and close_topic:
+        assert log is not None
+        final_outcome = log["outcome"]
+        if final_outcome == "OPEN":
+            final_outcome = "INCONCLUSIVE"
+        conn.execute(
+            """UPDATE research_cycles
+               SET status=?, closed_at=?, final_summary=?, failure_reason=?,
+                   reusable_clues=?, next_questions=?
+               WHERE id=?""",
+            (final_outcome.lower(), now, log["summary"],
+             log["failure_reason"] or None,
+             json.dumps(log["reusable_clues"], ensure_ascii=False),
+             json.dumps(log["next_questions"], ensure_ascii=False), cycle_id),
+        )
 
 
 def _post_in_tx(conn: sqlite3.Connection, *, topic_id: str, sender: str,
@@ -485,8 +898,14 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
                 (now,),
             )
             row = conn.execute(
-                """SELECT m.*, t.title AS topic_title
+                """SELECT m.*, t.title AS topic_title,
+                          c.id AS exploration_cycle_id,
+                          c.domain_key AS exploration_domain_key,
+                          c.domain_label AS exploration_domain_label,
+                          c.domain_lens AS exploration_domain_lens,
+                          c.rng_seed AS exploration_rng_seed
                    FROM messages m JOIN topics t ON t.id=m.topic_id
+                   LEFT JOIN research_cycles c ON c.topic_id=t.id
                    WHERE m.recipient=? AND m.status='queued' AND t.status='open'
                    ORDER BY m.created_at, m.id LIMIT 1""",
                 (agent,),
@@ -502,8 +921,15 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
             if updated != 1:
                 raise RuntimeError("메시지 선점 경쟁을 해결하지 못함")
             claimed = conn.execute(
-                """SELECT m.*, t.title AS topic_title
-                   FROM messages m JOIN topics t ON t.id=m.topic_id WHERE m.id=?""",
+                """SELECT m.*, t.title AS topic_title,
+                          c.id AS exploration_cycle_id,
+                          c.domain_key AS exploration_domain_key,
+                          c.domain_label AS exploration_domain_label,
+                          c.domain_lens AS exploration_domain_lens,
+                          c.rng_seed AS exploration_rng_seed
+                   FROM messages m JOIN topics t ON t.id=m.topic_id
+                   LEFT JOIN research_cycles c ON c.topic_id=t.id
+                   WHERE m.id=?""",
                 (row["id"],),
             ).fetchone()
             conn.commit()
@@ -588,6 +1014,10 @@ def submit_response(agent: str, message_id: int, response: dict[str, Any], *,
                 stop_reason = "max_messages"
 
             now = _now()
+            _record_research_in_tx(
+                conn, msg=msg, agent=agent, response=response, now=now,
+                close_topic=close_topic,
+            )
             conn.execute(
                 """UPDATE messages SET status='done', completed_at=?,
                    lease_owner=NULL, lease_until=NULL
@@ -643,12 +1073,97 @@ def topic_transcript(topic_id: str, *, db_path: Path | str = DEFAULT_DB) -> dict
         messages = conn.execute(
             "SELECT * FROM messages WHERE topic_id=? ORDER BY id", (topic_id,)
         ).fetchall()
+        cycle = conn.execute(
+            "SELECT * FROM research_cycles WHERE topic_id=?", (topic_id,)
+        ).fetchone()
+        events = conn.execute(
+            "SELECT * FROM research_events WHERE topic_id=? ORDER BY id", (topic_id,)
+        ).fetchall()
+        sources = conn.execute(
+            "SELECT * FROM research_sources WHERE topic_id=? ORDER BY id", (topic_id,)
+        ).fetchall()
     t = dict(topic)
     t["final_evidence_refs"] = json.loads(t["final_evidence_refs"])
     for key in ("created_at", "closed_at"):
         t[key] = _iso(t[key])
-    return {"topic": t, "messages": [_message_dict(row) for row in messages],
-            "authority": "UNASSESSED_DIALOGUE_ONLY"}
+    cycle_out = _cycle_dict(cycle) if cycle is not None else None
+    return {
+        "topic": t,
+        "messages": [_message_dict(row) for row in messages],
+        "research_cycle": cycle_out,
+        "research_events": [_event_dict(row) for row in events],
+        "research_sources": [_source_dict(row) for row in sources],
+        "authority": "UNASSESSED_DIALOGUE_ONLY",
+    }
+
+
+def _cycle_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    for key in ("created_at", "closed_at"):
+        out[key] = _iso(out[key])
+    for key in ("reusable_clues", "next_questions"):
+        out[key] = json.loads(out[key])
+    return out
+
+
+def _event_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    out["created_at"] = _iso(out["created_at"])
+    for key in ("reusable_clues", "next_questions"):
+        out[key] = json.loads(out[key])
+    return out
+
+
+def _source_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    for key in ("accessed_at", "created_at"):
+        out[key] = _iso(out[key])
+    return out
+
+
+def research_log_view(*, cycle_id: str | None = None, limit: int = 100,
+                      db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """Second-brain adapter가 소비할 수 있는 안정적인 JSON 연구 로그를 돌려준다."""
+    if limit < 1 or limit > 1000:
+        raise ValueError("limit은 1 이상 1000 이하여야 함")
+    init_db(db_path)
+    with _db(db_path) as conn:
+        if cycle_id:
+            cycles = conn.execute(
+                "SELECT * FROM research_cycles WHERE id=?", (cycle_id,)
+            ).fetchall()
+            if not cycles:
+                raise KeyError(f"존재하지 않는 research cycle: {cycle_id}")
+            events = conn.execute(
+                """SELECT * FROM research_events WHERE cycle_id=?
+                   ORDER BY created_at, id LIMIT ?""",
+                (cycle_id, limit),
+            ).fetchall()
+            sources = conn.execute(
+                """SELECT * FROM research_sources WHERE cycle_id=?
+                   ORDER BY accessed_at, id LIMIT ?""",
+                (cycle_id, limit),
+            ).fetchall()
+        else:
+            cycles = conn.execute(
+                "SELECT * FROM research_cycles ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            events = conn.execute(
+                "SELECT * FROM research_events ORDER BY created_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            sources = conn.execute(
+                "SELECT * FROM research_sources ORDER BY accessed_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return {
+        "schema": "math-dialogue-research-log/v1",
+        "cycles": [_cycle_dict(row) for row in cycles],
+        "events": [_event_dict(row) for row in events],
+        "sources": [_source_dict(row) for row in sources],
+        "authority": "UNASSESSED_DIALOGUE_ONLY",
+    }
 
 
 def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
@@ -665,6 +1180,13 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         states = {row["status"]: row["n"] for row in conn.execute(
             "SELECT status, COUNT(*) AS n FROM messages GROUP BY status"
         )}
+        cycle_states = {row["status"]: row["n"] for row in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM research_cycles GROUP BY status"
+        )}
+        research_counts = {
+            "events": conn.execute("SELECT COUNT(*) AS n FROM research_events").fetchone()["n"],
+            "sources": conn.execute("SELECT COUNT(*) AS n FROM research_sources").fetchone()["n"],
+        }
     freshness_cutoff = _now() - 1800
     for agent in agents:
         agent["fresh"] = bool(agent["active"] and agent["last_seen"] >= freshness_cutoff)
@@ -675,6 +1197,7 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         topic["final_evidence_refs"] = json.loads(topic["final_evidence_refs"])
     return {"db": str(Path(db_path).resolve()), "agents": agents,
             "topics": topics, "message_states": states,
+            "research_cycle_states": cycle_states, "research_counts": research_counts,
             "authority": "UNASSESSED_DIALOGUE_ONLY"}
 
 
@@ -686,6 +1209,14 @@ def _read_body(args: argparse.Namespace) -> str:
 
 def _json_print(value: Any) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _configure_stdio_utf8() -> None:
+    """Windows legacy codepage에서도 DB commit 뒤 JSON 출력 실패가 나지 않게 한다."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def selftest() -> None:
@@ -801,7 +1332,133 @@ def selftest() -> None:
         assert [row["question_id"] for row in sync2["created"]] == ["QQ-1002"]
         assert sync3["status"] == "open_topic_limit" and not sync3["created"]
 
-    print("math_dialogue selftest OK (토론, 중복방지, 동시선점, OPEN 질문 동기화)")
+        # 유휴 상태의 무작위 분야 탐사와 실패까지 포함한 구조화 로그를 검사한다.
+        register_agent("explorer-a", "창발 탐사 A", db_path=db)
+        seeded = seed_exploration(
+            "explorer-a", seed=20260812, cooldown_seconds=0,
+            max_cycles_per_day=1, db_path=db,
+        )
+        assert seeded["status"] == "created"
+        created = seeded["created"]
+        assert created["rng_seed"] == 20260812
+        exploration = claim_message("explorer-a", db_path=db)
+        assert exploration and exploration["id"] == created["message_id"]
+        assert exploration["exploration_cycle_id"] == created["cycle_id"]
+        response = {
+            "close_topic": True,
+            "kind": "SYNTHESIS",
+            "grade": "UNASSESSED",
+            "body": "이 분야 전이는 현재 정의와 직접 연결되지 않아 종료한다.",
+            "evidence_refs": ["https://example.org/paper"],
+            "research_log": {
+                "event_type": "FAILURE",
+                "summary": "첫 전이는 낮은 정보가치로 판정했다.",
+                "approach": "선택 분야의 표준 불변량을 현재 국소 의무에 대응시켰다.",
+                "outcome": "LOW_YIELD",
+                "failure_reason": "정의 보존 대응을 만들지 못했다.",
+                "reusable_clues": ["불변량의 정의역이 맞지 않음"],
+                "next_questions": ["쌍대 대상에서는 정의역이 맞는가?"],
+            },
+            "sources": [{
+                "url": "https://example.org/paper",
+                "title": "Example primary source",
+                "verification_level": "FULLTEXT",
+                "note": "정의역 조건만 확인했다.",
+            }],
+        }
+        finished = submit_response("explorer-a", exploration["id"], response, db_path=db)
+        assert finished["topic_closed"] is True
+        assert submit_response(
+            "explorer-a", exploration["id"], response, db_path=db
+        )["status"] == "already_submitted"
+        logged = research_log_view(cycle_id=created["cycle_id"], db_path=db)
+        assert logged["schema"] == "math-dialogue-research-log/v1"
+        assert logged["cycles"][0]["status"] == "low_yield"
+        assert len(logged["events"]) == 1 and len(logged["sources"]) == 1
+        assert logged["sources"][0]["verification_level"] == "FULLTEXT"
+        cooling = seed_exploration(
+            "explorer-a", seed=1, cooldown_seconds=1800,
+            max_cycles_per_day=2, db_path=db,
+        )
+        assert cooling["status"] == "cooldown" and cooling["retry_after_seconds"] > 0
+        budgeted = seed_exploration(
+            "explorer-a", seed=1, cooldown_seconds=0,
+            max_cycles_per_day=1, db_path=db,
+        )
+        assert budgeted["status"] == "daily_budget"
+
+        # 동시에 seed해도 global open-cycle 한도를 넘지 않는다.
+        register_agent("explorer-b", "창발 탐사 B", db_path=db)
+        register_agent("explorer-c", "창발 탐사 C", db_path=db)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(seed_exploration, name, seed=seed_value,
+                            cooldown_seconds=0, max_open_cycles=1, db_path=db)
+                for name, seed_value in (("explorer-b", 2), ("explorer-c", 3))
+            ]
+            concurrent_seeds = [future.result() for future in futures]
+        assert sorted(item["status"] for item in concurrent_seeds) == [
+            "created", "open_cycle_limit"
+        ]
+        winner = next(item for item in concurrent_seeds if item["status"] == "created")
+        winner_agent = winner["created"]["agent"]
+        winner_message = winner["created"]["message_id"]
+        claimed_winner = claim_message(winner_agent, db_path=db)
+        assert claimed_winner and claimed_winner["id"] == winner_message
+        try:
+            submit_response(winner_agent, winner_message, {
+                "close_topic": True, "kind": "SYNTHESIS",
+                "body": "구조화 연구 로그가 빠진 잘못된 응답",
+            }, db_path=db)
+        except ValueError as exc:
+            assert "research_log" in str(exc)
+        else:
+            raise AssertionError("창발 탐사에서 research_log 누락을 거부해야 함")
+        assert submit_response(winner_agent, winner_message, {
+            "close_topic": True, "kind": "SYNTHESIS",
+            "body": "동시 seed 승자의 탐사를 명시적으로 종료한다.",
+            "research_log": {
+                "event_type": "SYNTHESIS", "summary": "동시 seed 한도 확인",
+                "approach": "두 agent가 같은 open-cycle 예산을 경쟁했다.",
+                "outcome": "INCONCLUSIVE", "failure_reason": "",
+                "reusable_clues": ["global open-cycle limit이 직렬화됨"],
+                "next_questions": [],
+            },
+        }, db_path=db)["topic_closed"] is True
+
+        # 사용자/동료 inbox는 새 창발 탐사보다 우선한다.
+        register_agent("explorer-d", "창발 탐사 D", db_path=db)
+        enqueue_work("기존 의무", "먼저 처리할 질문", "explorer-d", db_path=db)
+        prioritized = seed_exploration(
+            "explorer-d", seed=4, cooldown_seconds=0, db_path=db,
+        )
+        assert prioritized["status"] == "inbox_not_empty"
+
+        # TTL/중단으로 처리 가능 메시지가 사라진 cycle은 다음 seed에서 자동 회수된다.
+        register_agent("explorer-e", "창발 탐사 E", db_path=db)
+        abandoned = seed_exploration(
+            "explorer-e", seed=5, cooldown_seconds=0, db_path=db,
+        )
+        assert abandoned["status"] == "created"
+        with _db(db) as conn:
+            conn.execute(
+                "UPDATE messages SET status='expired' WHERE id=?",
+                (abandoned["created"]["message_id"],),
+            )
+        register_agent("explorer-f", "창발 탐사 F", db_path=db)
+        recovered = seed_exploration(
+            "explorer-f", seed=6, cooldown_seconds=0, db_path=db,
+        )
+        assert recovered["status"] == "created"
+        abandoned_log = research_log_view(
+            cycle_id=abandoned["created"]["cycle_id"], db_path=db,
+        )
+        assert abandoned_log["cycles"][0]["status"] == "inconclusive"
+        assert abandoned_log["cycles"][0]["failure_reason"] == (
+            "heartbeat 중단 또는 메시지 TTL 만료"
+        )
+
+    print("math_dialogue selftest OK (토론, 동시선점, OPEN 동기화, 창발 탐사 로그)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -869,12 +1526,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-open-topics", type=int, default=2)
     p.add_argument("--limit", type=int, default=1)
     p.add_argument("--stale-after-seconds", type=int, default=1800)
+    p = sub.add_parser("seed-exploration", help="유휴 strategist용 무작위 분야 탐사 생성")
+    p.add_argument("--agent", default="strategist")
+    p.add_argument("--seed", type=int)
+    p.add_argument("--max-cycles-per-day", type=int, default=4)
+    p.add_argument("--max-open-cycles", type=int, default=1)
+    p.add_argument("--cooldown-seconds", type=int, default=1800)
+    p.add_argument("--max-rounds", type=int, default=6)
+    p.add_argument("--max-messages", type=int, default=8)
+    p = sub.add_parser("research-log", help="구조화 연구 사이클·사건·출처 JSON 조회")
+    p.add_argument("--cycle")
+    p.add_argument("--limit", type=int, default=100)
     sub.add_parser("status", help="전체 상태 조회")
     sub.add_parser("selftest", help="실제 Codex 없이 프로토콜 자체 테스트")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio_utf8()
     args = build_parser().parse_args(argv)
     db = Path(args.db)
     if args.command == "init":
@@ -918,6 +1587,19 @@ def main(argv: list[str] | None = None) -> int:
             args.open_file, args.to, min_active_agents=args.min_active_agents,
             max_open_topics=args.max_open_topics, limit=args.limit,
             stale_after_seconds=args.stale_after_seconds, db_path=db,
+        ))
+    elif args.command == "seed-exploration":
+        _json_print(seed_exploration(
+            args.agent, seed=args.seed,
+            max_cycles_per_day=args.max_cycles_per_day,
+            max_open_cycles=args.max_open_cycles,
+            cooldown_seconds=args.cooldown_seconds,
+            max_rounds=args.max_rounds, max_messages=args.max_messages,
+            db_path=db,
+        ))
+    elif args.command == "research-log":
+        _json_print(research_log_view(
+            cycle_id=args.cycle, limit=args.limit, db_path=db,
         ))
     elif args.command == "status":
         _json_print(system_status(db_path=db))

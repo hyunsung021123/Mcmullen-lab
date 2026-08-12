@@ -6,7 +6,8 @@
 2. 실행 파일은 루트의 `math_dialogue.py`를 우선 사용하고, 아직 PR이 병합되지 않아 없으면
    `local_runs/math_dialogue/runtime/math_dialogue.py`를 사용한다.
 3. DB는 항상 저장소 루트의 `local_runs/math_dialogue/dialogue.sqlite3`를 `--db`로 명시한다.
-4. Python은 PATH의 `python`, `py -3`, Codex 번들 Python 순으로 실제 실행 가능한 것을 고른다.
+4. Python은 PATH의 `python`, `py -3`, Codex 번들 Python 순으로 실제 실행 가능한 것을 고르고,
+   모든 CLI 호출에 `-X utf8`을 붙인다.
 5. `common.md`, `{ROLE_FILE}`, `heartbeat.md`, 저장소 `AGENTS.md`, `docs/STATE.md`를 읽는다.
 6. `{AGENT_NAME}`을 역할 파일에 적힌 설명으로 DB에 등록한다.
 7. 현재 task로 돌아오는 10분 간격 heartbeat automation을 Local 환경으로 하나 만든다. 이름은
