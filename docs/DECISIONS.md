@@ -859,3 +859,35 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
   `theorist.py`의 결정론적 적대자 로직은 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0042 — 알려진 상한 U(d)와 고전 구성의 witness 크기 M(d)를 코드에서 분리
+
+- 날짜: 2026-08-13
+- 제안자: codex 자율 토론 루프(QQ-0001 종합에서 특정) → claude-code(독립 검증·정정)
+- 관련 Issue/PR: `claude/74-upper-bound-parity-fix`
+- 발견 경로: 2026-08-12 Codex 4-agent 루프가 QQ-0001을 처리하며 `om_core`의 U 식과
+  `docs/STATE.md`·`layer_search.known_upper_bound`의 U 식이 **서로 다르다**는 것을 특정했다.
+  Claude Code가 d=2..11 전 범위에서 독립 재현했다.
+- 결정 1 — 알려진 상한은 `U(d) = floor(5d/2)`이고, 고전 Lawrence 구성이 witness를 주는
+  크기는 `M(d) = U(d)+1`이다. `witness at n ⟹ nu(d) <= n-1`이므로 두 양은 **항상 1 차이**다.
+  옛 식 `2d + floor((1+d)/2)`는 **짝수 d에서는 U(d)와 같고 홀수 d에서는 M(d)와 같다**
+  (`옛식 - U = d mod 2`). 그래서 오류가 짝수 차원에서 보이지 않았고, 하필 주 목표인
+  d=5에서만 드러났다.
+- 결정 2 — `om_core.mcmullen_evaluate`의 기본 U와 `search.SearchConfig.resolve`의 U를
+  `(5*d)//2`로 정정한다. 이로써 `reward > 0 <=> n <= U(d) <=> 알려진 상한을 실제로 개선`이
+  성립한다. 정정 전에는 홀수 d에서 `n = M(d)`인 **고전 구성이 reward = 1 > 0을 받아
+  '개선'으로 보고**됐다(d=5, n=13이 정확히 그 경우이며 실제 개선은 0이다).
+- 결정 3 — 이 정정은 **판정 권한과 무관**하다. witness/valid 판정은 U를 쓰지 않고,
+  `solves_conjecture`는 U가 아니라 `target_bound = 2d+1`로 계산된다. 영향 범위는
+  (a) reward 우선순위 점수, (b) `n_max = U+1` 기본 탐색 상한(홀수 d에서 한 단계 낭비)뿐이다.
+  `om_core.py`의 core-contract 자체 테스트는 reward를 assert하지 않았으므로 회귀도 없었다.
+- 결정 4 — 같은 혼동이 재발하지 않도록 `om_core.py` 자체 테스트에 U/M parity 항등식과
+  `n = M(d)`에서 reward가 0이라는 계약을 assert로 고정한다. 기본 U 자체는 rank-2 예제
+  (d=1, 홀수라 두 식이 갈린다)의 reward로 직접 검증한다.
+- 결정 5 — `README.md` §1의 표기를 정정하고, §10의 "d=3/d=5에서 n=2d+2가 양의 reward"라는
+  서술도 함께 고친다. 정정된 U에서는 **d=2와 d=3이 모두 tight**(하한 `2d+1`이 `U(d)`와 같다,
+  d=3: 7=7)이고 개선 구간은 `2d+2 <= floor(5d/2)`, 즉 **d>=4에서만** 열린다.
+- 영향 범위: `om_core.py`(기본 U + 자체 테스트), `search.py`(U_known), `README.md`(§1, §10).
+  판정 로직·criteria·클래스 레지스트리·theorist 적대자는 무변경.
+- 번호 주의: 이 항목은 `develop`(0027까지) 기준 브랜치에서 작성했다. 0028~0041은 미병합
+  브랜치에 있어 파일상 번호가 건너뛴 것처럼 보이지만, append-only 규약대로 병합 시 함께 정렬된다.

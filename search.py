@@ -59,12 +59,16 @@ class SearchConfig:
         r = oc.resolve_rank(self.d)
         d_eff = r - 1
         self._r = r; self._d_eff = d_eff
-        U_loose = 2 * d_eff + (1 + d_eff) // 2
+        # 알려진 상한 U(d) = floor(5d/2) — om_core.mcmullen_evaluate 와 같은 식을 써야
+        # reward 기준선이 어긋나지 않는다. 이전 식 2d + (1+d)//2 는 홀수 d 에서 상한이
+        # 아니라 고전 구성의 witness 크기 M(d) = U(d)+1 이었다 (0042).
+        U_known = (5 * d_eff) // 2
         if self.U is None:
-            self.U = U_loose
+            self.U = U_known
         if self.n_min is None:
             self.n_min = max(r + 1, 2 * d_eff + 2)
         if self.n_max is None:
+            # U+1 = M(d) = 고전 구성이 witness 를 주는 크기. 그 위는 훑을 이유가 없다.
             self.n_max = self.U + 1
         merged = list(oc.base_criteria) + list(self.criteria)
         if not any(c.get("name") == "valid" for c in merged):

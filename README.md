@@ -45,7 +45,11 @@ python run.py --config config.example.yaml
 * **McMullen(OM) 목표**: 재배향으로도 convex 가 안 되는 uniform OM(실현 가능/불가능 무관)을
   최소 n 으로. n 에서 찾으면 상한 ≤ n−1. d=5 의 구체 목표는 **rank-6, n=12** witness →
   ν(5) ≤ 11 (Larman f(5)=11).
-* **보상** `reward = (U+1) − n`,  느슨한 상한 `U = 2d + ⌊(1+d)/2⌋` (d=2→5, d=3→8, d=5→13).
+* **알려진 상한** `U(d) = ⌊5d/2⌋` (d=2→5, d=3→7, d=5→12, d=7→17). 고전 Lawrence 구성이
+  witness 를 주는 크기는 `M(d) = U(d)+1` (d=5→13) 이고, `witness at n ⟹ ν(d) ≤ n−1` 이므로
+  두 양은 항상 1 차이다 — **섞으면 홀수 d 에서 정확히 한 칸 어긋난다**(0042 정정).
+* **보상** `reward = (U+1) − n`. 즉 `reward > 0 ⟺ n ≤ U(d) ⟺ 알려진 상한을 실제로 개선`.
+  d=5 에서 n=13 은 reward 0 (고전 구성과 동급), n≤12 여야 개선이다.
 
 ---
 
@@ -303,8 +307,14 @@ flowchart TD
   1. **구조적 시드**(순환다면체·Lawrence·당신의 rank-2 REOM)에서 출발,
   2. **대칭 축소** + **타깃 SAT/Z3**(`backend: z3`)로 GP+편향을 인코딩,
   3. 위원회는 '어떤 부분구조를 고정/금지할지' 같은 **검증 가능한 편향**만 제안.
-* d=2 는 이미 tight(U=2d+1)이므로 reward 0 이지만, d=3/d=5 에서는 n=2d+2 witness 가
-  양의 reward 와 `solves_conjecture=true` 를 줍니다.
+* **어느 d 에서 개선이 가능한가**는 `2d+2 ≤ U(d) = ⌊5d/2⌋` 로 결정됩니다(§1 의 reward 식).
+  * **d=2, d=3 은 이미 tight** — 하한 `2d+1` 이 `U(d)` 와 같습니다(d=3: 7 = 7). Larman 목표
+    `n=2d+2` 를 달성해도 `ν(d) ≤ 2d+1 = U(d)` 로 알려진 상한과 동급이라 **reward 0** 입니다.
+  * **d ≥ 4 에서만 개선 구간이 열립니다.** d=4 는 n=10, d=5 는 n=12(= Larman 목표)에서
+    reward 1 입니다. `solves_conjecture` 는 reward 와 별개로 `n−1 == 2d+1` 로만 판정됩니다.
+
+  > ⚠ 이 문단은 0042 이전에 "d=3/d=5 에서 n=2d+2 가 양의 reward" 라고 적혀 있었습니다.
+  > d=3 부분은 U 를 한 칸 크게 잡은 옛 식(§1 참고)에서 나온 오류였습니다.
 
 ### 당신의 REOM(rank-2 Lawrence) 연결
 당신의 signed-permutation-tuple / ABA-패턴 인코딩을 `generator.py` 의 백엔드로 꽂으면,
