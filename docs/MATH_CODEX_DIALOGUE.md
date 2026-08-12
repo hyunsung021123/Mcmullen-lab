@@ -166,6 +166,10 @@ heartbeat가 `no_work`에서 종료하는 문구를 갖고 있어도, 실제 inb
 python math_dialogue.py release --agent strategist --message-id 17
 ```
 
+CLI release는 기본 30분 동안 메시지를 defer한다. 같은 막힘을 10분마다 반복하지 않으면서도
+메시지를 삭제하지 않고 나중에 다시 시도하기 위함이다. 즉시 재시도하려면 명시적으로
+`--defer-seconds 0`을 쓴다.
+
 계산이 필요하면 `claude-compute`에 일반 메시지만 보내지 않고
 `docs/COMPUTATION_RELAY.md`의 `computation-request/v1`을 작성해 `computation_relay.py
 post-request`로 게시한다. relay가 아직 활성화되지 않은 환경에서만 `experimentalist`를

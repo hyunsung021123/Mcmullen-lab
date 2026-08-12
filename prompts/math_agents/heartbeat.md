@@ -24,6 +24,7 @@
    계약을 반드시 채운다.
 7. 적합한 동료가 없고 혼자 처리해도 의미 있는 종결을 만들 수 없으면 일반 메시지는
    `python -X utf8 math_dialogue.py release --agent {AGENT_NAME} --message-id <id>`로 반환한다.
+   CLI는 기본 30분 동안 그 메시지를 defer해 같은 막힘을 매 heartbeat마다 반복하지 않는다.
    창발 사이클은 반환하지 말고 실패 이유와 재사용 단서를 `research_log`에 남겨 닫는다.
 8. 응답 JSON을 `local_runs/math_dialogue/responses/{AGENT_NAME}-<id>.json`에 UTF-8로 쓰고
    `python -X utf8 math_dialogue.py submit --agent {AGENT_NAME} --message-id <id>

@@ -967,6 +967,10 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
 - 결정 5-1 — 기존 Scheduled prompt를 다시 만들지 않아도 되도록 CLI의 strategist `claim` 경계가
   inbox가 비면 위 bounded seed를 한 번 수행한다. 저수준 `claim_message` API는 그대로 두어
   relay 하위호환을 보존하고, 수동 진단은 `--no-idle-exploration`으로 opt-out한다.
+- 결정 5-2 — CLI heartbeat의 `release`는 기본 30분 `available_at` defer를 적용한다. 적합한
+  동료가 없어 반환한 같은 메시지를 10분마다 다시 잡아 창발 탐사를 영구 차단하는 livelock을
+  피하기 위함이다. 메시지는 삭제되지 않고 시간이 지나면 다시 우선 inbox에 나타난다. 저수준
+  API 기본값은 0초로 유지하고 CLI에서만 30분을 적용해 relay 하위호환을 보존한다.
 - 결정 6 — 이 로그의 권한은 계속 `UNASSESSED_DIALOGUE_ONLY`다. 실패 축적이나 출처 기록은
   evidence, theorem, witness, realizability 결론 또는 pruning 권한을 만들지 않는다.
 - 영향 범위: `math_dialogue.py`, strategist/common/heartbeat prompt와 운영 문서만 변경.

@@ -90,7 +90,8 @@ python math_dialogue.py enqueue --title "<짧은 제목>" --created-by human `
 
 적합한 역할이 등록돼 있지 않으면 `active=true`, `fresh=true`인 가장 가까운 실제 동료에게
 의무를 명시해 넘긴다. fresh 동료가 전혀 없으면 메시지를 release한다. 자기 자신에게 연속으로
-보내며 가짜 토론을 만들지 않는다.
+보내며 가짜 토론을 만들지 않는다. CLI release의 기본 30분 defer 동안 다른 탐사를 진행하고,
+동료가 돌아온 뒤 원래 의무를 다시 시도한다.
 
 ## Claude 계산 relay
 

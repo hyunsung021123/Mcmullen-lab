@@ -200,6 +200,7 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 status TEXT NOT NULL CHECK(status IN ('queued', 'leased', 'done', 'expired')),
                 lease_owner TEXT,
                 lease_until REAL,
+                available_at REAL NOT NULL,
                 created_at REAL NOT NULL,
                 expires_at REAL NOT NULL,
                 completed_at REAL
@@ -279,6 +280,9 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
         if "last_seen" not in agent_columns:
             conn.execute("ALTER TABLE agents ADD COLUMN last_seen REAL")
             conn.execute("UPDATE agents SET last_seen=created_at WHERE last_seen IS NULL")
+        message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
+        if "available_at" not in message_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN available_at REAL NOT NULL DEFAULT 0")
     return path
 
 
@@ -547,9 +551,11 @@ def seed_exploration(agent: str, *, seed: int | None = None,
             pending = conn.execute(
                 """SELECT COUNT(*) AS n
                    FROM messages m JOIN topics t ON t.id=m.topic_id
-                   WHERE m.recipient=? AND m.status IN ('queued', 'leased')
+                   WHERE m.recipient=?
+                     AND (m.status='leased' OR
+                          (m.status='queued' AND m.available_at<=?))
                      AND t.status='open'""",
-                (agent,),
+                (agent, now),
             ).fetchone()["n"]
             if pending:
                 conn.commit()
@@ -832,11 +838,11 @@ def _post_in_tx(conn: sqlite3.Connection, *, topic_id: str, sender: str,
     cur = conn.execute(
         """INSERT INTO messages
            (topic_id, sender, recipient, kind, grade, body, evidence_refs,
-            parent_id, round_no, status, created_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)""",
+            parent_id, round_no, status, available_at, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)""",
         (topic_id, sender, recipient, kind, grade, body,
          json.dumps(evidence_refs, ensure_ascii=False), parent_id, round_no,
-         now, now + ttl_seconds),
+         now, now, now + ttl_seconds),
     )
     return int(cur.lastrowid)
 
@@ -866,7 +872,7 @@ def _message_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         return None
     out = dict(row)
     out["evidence_refs"] = json.loads(out["evidence_refs"])
-    for key in ("created_at", "expires_at", "lease_until", "completed_at"):
+    for key in ("available_at", "created_at", "expires_at", "lease_until", "completed_at"):
         out[key] = _iso(out[key])
     return out
 
@@ -906,9 +912,10 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
                           c.rng_seed AS exploration_rng_seed
                    FROM messages m JOIN topics t ON t.id=m.topic_id
                    LEFT JOIN research_cycles c ON c.topic_id=t.id
-                   WHERE m.recipient=? AND m.status='queued' AND t.status='open'
-                   ORDER BY m.created_at, m.id LIMIT 1""",
-                (agent,),
+                   WHERE m.recipient=? AND m.status='queued' AND m.available_at<=?
+                     AND t.status='open'
+                   ORDER BY m.available_at, m.created_at, m.id LIMIT 1""",
+                (agent, now),
             ).fetchone()
             if row is None:
                 conn.commit()
@@ -963,22 +970,26 @@ def claim_for_heartbeat(agent: str, *, lease_seconds: int = 900,
     }
 
 
-def release_message(agent: str, message_id: int, *,
+def release_message(agent: str, message_id: int, *, defer_seconds: int = 0,
                     db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
     """Return an unprocessed leased message to the queue without changing its content."""
+    if defer_seconds < 0:
+        raise ValueError("defer_seconds는 0 이상이어야 함")
     init_db(db_path)
     with _db(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
             updated = conn.execute(
-                """UPDATE messages SET status='queued', lease_owner=NULL, lease_until=NULL
+                """UPDATE messages SET status='queued', lease_owner=NULL, lease_until=NULL,
+                   available_at=?
                    WHERE id=? AND status='leased' AND lease_owner=?""",
-                (message_id, agent),
+                (_now() + defer_seconds, message_id, agent),
             ).rowcount
             if updated != 1:
                 raise ValueError(f"message {message_id}은 {agent}가 선점한 작업이 아님")
             conn.commit()
-            return {"status": "released", "message_id": message_id}
+            return {"status": "released", "message_id": message_id,
+                    "defer_seconds": defer_seconds}
         except Exception:
             conn.rollback()
             raise
@@ -1204,6 +1215,11 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         states = {row["status"]: row["n"] for row in conn.execute(
             "SELECT status, COUNT(*) AS n FROM messages GROUP BY status"
         )}
+        deferred_messages = conn.execute(
+            """SELECT COUNT(*) AS n FROM messages
+               WHERE status='queued' AND available_at>?""",
+            (_now(),),
+        ).fetchone()["n"]
         cycle_states = {row["status"]: row["n"] for row in conn.execute(
             "SELECT status, COUNT(*) AS n FROM research_cycles GROUP BY status"
         )}
@@ -1221,6 +1237,7 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         topic["final_evidence_refs"] = json.loads(topic["final_evidence_refs"])
     return {"db": str(Path(db_path).resolve()), "agents": agents,
             "topics": topics, "message_states": states,
+            "deferred_messages": deferred_messages,
             "research_cycle_states": cycle_states, "research_counts": research_counts,
             "authority": "UNASSESSED_DIALOGUE_ONLY"}
 
@@ -1474,6 +1491,24 @@ def selftest() -> None:
             "status": "no_work", "message": None, "idle_exploration": None
         }
 
+        # 동료 부재로 release한 일반 질문은 잠시 defer되어 탐사 pivot을 막지 않는다.
+        defer_db = Path(td) / "deferred-inbox.sqlite3"
+        register_agent("strategist", "defer strategist", db_path=defer_db)
+        waiting = enqueue_work(
+            "동료를 기다리는 의무", "지금은 적합한 동료가 없다.", "strategist",
+            db_path=defer_db,
+        )
+        claimed_waiting = claim_for_heartbeat("strategist", db_path=defer_db)
+        assert claimed_waiting["message"]["id"] == waiting["message_id"]
+        released_waiting = release_message(
+            "strategist", waiting["message_id"], defer_seconds=60, db_path=defer_db,
+        )
+        assert released_waiting["defer_seconds"] == 60
+        pivot_claim = claim_for_heartbeat("strategist", db_path=defer_db)
+        assert pivot_claim["status"] == "claimed"
+        assert pivot_claim["message"]["exploration_cycle_id"] is not None
+        assert system_status(db_path=defer_db)["deferred_messages"] == 1
+
         # TTL/중단으로 처리 가능 메시지가 사라진 cycle은 다음 seed에서 자동 회수된다.
         register_agent("explorer-e", "창발 탐사 E", db_path=db)
         abandoned = seed_exploration(
@@ -1553,6 +1588,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("release", help="처리하지 않은 선점 메시지를 큐로 반환")
     p.add_argument("--agent", required=True)
     p.add_argument("--message-id", required=True, type=int)
+    p.add_argument("--defer-seconds", type=int, default=1800,
+                   help="CLI heartbeat 반환 후 재선점까지 대기(기본 30분)")
 
     p = sub.add_parser("submit", help="선점 메시지에 JSON 응답 제출")
     p.add_argument("--agent", required=True)
@@ -1619,7 +1656,9 @@ def main(argv: list[str] | None = None) -> int:
             idle_exploration=not args.no_idle_exploration, db_path=db,
         ))
     elif args.command == "release":
-        _json_print(release_message(args.agent, args.message_id, db_path=db))
+        _json_print(release_message(
+            args.agent, args.message_id, defer_seconds=args.defer_seconds, db_path=db,
+        ))
     elif args.command == "submit":
         response = json.loads(Path(args.response_file).read_text(encoding="utf-8"))
         _json_print(submit_response(args.agent, args.message_id, response, db_path=db))

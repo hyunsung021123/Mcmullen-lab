@@ -53,6 +53,8 @@ source는 모두 `UNASSESSED_DIALOGUE_ONLY`이며 `evidence_db.py`, insight ledg
 - 한 heartbeat는 한 메시지만 처리한다.
 - 한 사이클은 핵심 전이 하나만 밀며, 병렬 질문 폭발 대신 가장 값싼 판별 의무 하나를 라우팅한다.
 - `LOW_YIELD`와 `DUPLICATE`를 실패가 아닌 보존할 연구 데이터로 취급한다.
+- 일반 질문이 적합한 동료 부재로 release되면 CLI 기본값으로 30분 defer한다. defer된 질문은
+  삭제되지 않지만 그 사이 새 분야 탐사를 막지 않으며, 시간이 지나면 다시 우선 inbox로 돌아온다.
 
 계산 의무는 일반 메시지만 보내지 않고 `docs/COMPUTATION_RELAY.md`의
 `computation-request/v1`으로 `claude-compute`에 게시한다. 요청은 데이터이고 실행 명령은 담지
