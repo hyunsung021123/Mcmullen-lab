@@ -24,6 +24,7 @@
 | 실험 이력 | `research_log.md` (한 줄 = 한 라운드) |
 | 수학 자문 질문·답변 | `questions/OPEN.md` · `questions/ANSWERED.md` |
 | 사람 insight 상태 | `knowledge/insights/ledger.jsonl` (`python insight_ledger.py list`) |
+| **자율 토론 루프의 미승격 성과** | `knowledge/dialogue_research/` — 권한 `UNASSESSED_DIALOGUE_ONLY`. 재현된 항목은 `python scripts/verify_dialogue_claims.py` |
 | 정리·삭제 작업 | `docs/REFACTOR_BACKLOG.md` |
 | 원문 PDF 반입 | `knowledge/papers/README.md` |
 

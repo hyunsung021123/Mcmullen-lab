@@ -124,6 +124,20 @@ layer family 는 실현가능성이 보장되지만 공간이 좁다. 그래서 
 
 ## 5. 다음 수
 
+**⚠ 먼저 읽을 것 — Codex 자율 루프의 미승격 성과 (2026-08-12).**
+`knowledge/dialogue_research/2026-08-12-emergent-loop.md` 에 연구 사이클 10개가 반입돼 있다.
+권한은 `UNASSESSED_DIALOGUE_ONLY` 이고 **아무것도 승격되지 않았다.** 그중 재현된 것은
+`scripts/verify_dialogue_claims.py` 가 출력한다. 새 탐색을 열기 전에 두 가지를 반영하라:
+
+- **QQ-0001/0002/0003 은 부분 해결됐다** (`questions/OPEN.md` 의 🔁 표시 참고). 같은 질문을
+  처음부터 다시 파지 말 것. QQ-0001 은 코드 정정으로 이어졌다(0042 — 위 §1 의 U(d) 표기가
+  옳았고 `om_core`·`search` 가 틀렸다).
+- **(5,12) 관련 새 하한 후보**: rank-6,n=12 의 circuit obstruction cover 는 **8개로 불가능,
+  최소 9개** 라는 결과가 나왔다. 용량 강성(모든 mask 크기 256, `2048 = 8×256` 여유 0)은
+  재현됐지만 **240-case 전수와 Paley 궤도 동일성은 미검증**이라 §2 에 올리지 않았다.
+  승격에는 영속 replay artifact 가 필요하며, 그것이 아래 1번 gate 의 탐색 공간을 좁힌다
+  (8-partition 의 seven-top core 를 물려받는 9-cover 계열은 이미 배제됐다).
+
 **사용자 지정 최우선 순위 (2026-08-12):**
 
 1. `HI-0006`의 고전 Lawrence 접합 귀납을 exact boundary-state automaton과 Claude의

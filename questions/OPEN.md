@@ -7,6 +7,15 @@
 
 ## QQ-0001 — 기존 상한 U(d) 의 정확한 출처와 값 · 상태 `OPEN` · 우선순위 **최상**
 
+> 🔁 **부분 해결 (2026-08-12 Codex 루프).** 요구 1–3 은 종합됐다: `M(d) = ⌊5d/2⌋+1` (A* witness
+> 크기), `U(d) = M(d)−1 = ⌊5d/2⌋`, 출처는 Ramírez Alfonsín (2001) Thm 1.1 / Def 3.2.
+> **아래 본문이 기준선으로 적고 있는 `2d + ⌊(1+d)/2⌋` 는 홀수 d 에서 상한이 아니라 witness
+> 크기였다** — Claude Code 가 d=1..11 에서 독립 재현해 코드를 정정했다(0042, `claude/74`).
+> `layer_search.known_upper_bound` 와 `docs/STATE.md §1` 은 이미 올바른 식을 쓰고 있었다.
+> **여전히 열린 것: 요구 4** — d=5 전용으로 일반식보다 강한 문헌(ν(5) ≤ 11)이 있는지.
+> 문헌 부재는 결론으로 삼지 않는다. 전문은
+> `knowledge/dialogue_research/2026-08-12-emergent-loop.md` 의 QQ-0001 종합.
+
 **왜 막혔는가.** 우리는 지금 "witness at n ⟹ ν(d) ≤ n−1" 로 상한을 낮추는 탐색을 돌리는데,
 **무엇을 이겨야 개선인지**가 확정돼 있지 않다. 코드는 `U(d) = 2d + ⌊(1+d)/2⌋` 를 기준선으로
 쓰고 있으나(`om_core.mcmullen_evaluate`, `layer_search.known_upper_bound`),
@@ -38,6 +47,16 @@ _(비어 있음)_
 
 ## QQ-0002 — rank-2 layer union 의 실현 정리 · 상태 `OPEN` · 우선순위 상
 
+> 🔁 **증명 초안 있음 (2026-08-12 Codex 루프) — 아직 미감사.** ordered product 가 **항상**
+> realizable 이라는 내부 증명 사슬(일반 Laplace 전개 → weight inversion 유일성 → shuffle
+> sign → 공통 t 하한 `t^g > (N−1)Hᵐ/C_min`)이 나왔고, "λ=j 가 최고항 동점을 만든다"는
+> 우려는 **반증**됐다(비최대항끼리의 동점일 뿐). m=2 전수 / m=3 표본으로 대조됨.
+> **여전히 열린 것: 요구 1** — Lawrence–Weinberg 1981 이 union 적법성만 증명했는지
+> realizability 까지인지의 정확한 theorem 번호·문면. 내부 증명은 그 강한 문헌 진술을
+> 가정하지 않는다. **미감사이므로 구현에 반영하기 전에 문서 감사가 필요하다**
+> (`scripts/verify_dialogue_claims.py` 의 미검증 목록 참고). 전문은
+> `knowledge/dialogue_research/2026-08-12-emergent-loop.md` 의 QQ-0002 종합.
+
 **왜 막혔는가.** 우리는 rank-2 layer m 개를 Lawrence–Weinberg 곱으로 합쳐 rank-2m OM 을
 만들고, **원소별·블록별 계수** c_{i,j} = t^{i·λ_j} 로 쌓아 정수 좌표 실현을 얻는다(HI-0004).
 후보마다 `om_core` 로 대조하므로 **개별 객체의 실현가능성은 확정**이지만, **일반 명제**
@@ -68,6 +87,15 @@ _(비어 있음)_
 ---
 
 ## QQ-0003 — 혼합 rank layer 로의 확장 · 상태 `OPEN` · 우선순위 중
+
+> 🔁 **종합됨 (2026-08-12 Codex 루프) — 아직 미감사.** 아래 "우리 추론"이 맞는 방향이었다.
+> 임의 양의 조성 r₀+⋯+r_{k−1}=R 의 ordered product 가 항상 uniform realizable 이고,
+> 모든 rᵢ=1 이 정확히 고전 Lawrence 부호 공식이며, **모든 조성 family 가 고전을 포함**하고
+> 혼합형은 **n=5 부터 진부분집합으로 진짜 더 크다**(n=4,5,6 전수). composition reversal
+> 보조정리도 나왔다(홀수 R 에서 singleton slot p 와 m−p 는 동치). 탐색 우선순위 권고:
+> 홀수 d 는 pure rank-2, 짝수 d 는 `(1,2,…,2)` 의 reversal 궤도별로 하나씩.
+> **구현 전 감사 필요.** 전문은
+> `knowledge/dialogue_research/2026-08-12-emergent-loop.md` 의 QQ-0003 종합.
 
 **왜 막혔는가.** 현재 family 는 layer 가 전부 rank-2 라 **rank = 2m, 즉 홀수 d 에서만**
 정의된다. d=4 에서 보정할 수 없고(우리가 유일하게 답을 아는 차원인데) 짝수 d 상한도 못 건드린다.
