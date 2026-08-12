@@ -975,3 +975,34 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   evidence, theorem, witness, realizability 결론 또는 pruning 권한을 만들지 않는다.
 - 영향 범위: `math_dialogue.py`, strategist/common/heartbeat prompt와 운영 문서만 변경.
   `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.
+
+## 0041 — 인간적 의미는 발견 게이트가 아니라 결과 후 독립 개념 증류로 다룬다
+
+- 날짜: 2026-08-12
+- 제안자: human (중간의 비휴리스틱 결과를 버리지 않되 최종적으로 인간적 형식화를 계속 점검할
+  것을 요청) → codex (설계·구현)
+- 관련 Issue/PR: #72 / #74
+- 결정 1 — 발견·증명·계산 도중에는 “사람에게 즉시 의미 있는가”를 gate나 rank 점수로 쓰지
+  않는다. 병리적인 식, 긴 경우분석, 개념 해석이 없는 유한 패턴도 기존
+  `research_cycles/events/sources`에 그대로 보존하며, 비휴리스틱이라는 이유로 `LOW_YIELD`,
+  `REFUTED`, pruning 또는 등급 강등으로 보내지 않는다.
+- 결정 2 — discovery cycle이 `ADVANCED` 또는 `REFUTED`로 닫힐 때 별도
+  `distillation_jobs`를 idempotent하게 만든다. source cycle 행은 수정하지 않고 분야별 시도를
+  append-only `distillation_attempts`에 기록한다. 각 시도는 인간적 명제, 작동 메커니즘, 표준
+  대상, 최소 예, 전이 범위, 한계와 문헌 검색어를 구조화하고 `CONCEPTUALIZED`/`PARTIAL`/
+  `NO_BRIDGE`로 표시한다. 이 값들은 진위·evidence 등급이 아니다.
+- 결정 3 — 기본 job 예산은 서로 다른 분야 렌즈 네 번이다. 소진해도 source는 폐기하지 않고
+  `RAW_PRESERVED`로 둔다. 이는 “현재 예산에서 개념화하지 못함”이며 source 결과의 실패 판정이
+  아니다. 부분 결과의 재시도는 기본 6시간 뒤에 열고, strategist당 하루 네 번으로 제한한다.
+- 결정 4 — 증류가 발견을 굶기지 않도록 같은 strategist의 증류 cycle 두 개 사이에는 discovery
+  cycle을 최소 하나 둔다. 일반 inbox가 항상 우선하며, 기존 `claim --agent strategist` 경계가
+  자동으로 증류를 확인한 뒤 새 탐사를 seed하므로 Scheduled task를 재생성하지 않는다.
+- 근거 — Davies et al.(Nature 2021)의 인간-기계 반복 정제와 “학습 실패 ≠ 관계 부재”,
+  FunSearch의 correct evaluator/다양한 프로그램/해석 가능한 생성기 분리, AlphaGeometry의
+  저수준 탐색 후 symbolic traceback, AlphaEvolve의 다중 표현과 다양성 보존을 참고했다. 단,
+  해당 시스템의 단순성 선호를 이 저장소의 제거 기준으로 옮기지 않고 후처리 상태로만 채택했다.
+- 영향 범위: `math_dialogue.py`의 additive SQLite migration·scheduler·구조화 출력,
+  strategist/common/heartbeat prompt, `docs/EMERGENT_RESEARCH_LOOP.md`와
+  `docs/MATH_CODEX_DIALOGUE.md`. `step_ranker.py`/PRM, `om_core.py`, `criteria.py`,
+  `theorist.py`, insight/evidence/witness 판정 경로는 무변경.
+- 다른 참여자 리뷰 상태: pending.

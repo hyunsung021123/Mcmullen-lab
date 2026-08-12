@@ -110,6 +110,11 @@ RESEARCH_OUTCOMES = {
     "INCONCLUSIVE",
 }
 SOURCE_VERIFICATION_LEVELS = {"FULLTEXT", "ABSTRACT_ONLY", "SECONDHAND"}
+DISTILLABLE_OUTCOMES = {"ADVANCED", "REFUTED"}
+DISTILLATION_ATTEMPT_STATUSES = {"CONCEPTUALIZED", "PARTIAL", "NO_BRIDGE"}
+DISTILLATION_JOB_STATUSES = {"PENDING", "PARTIAL", "CONCEPTUALIZED", "RAW_PRESERVED"}
+DISTILLATION_REVISIT_SECONDS = 6 * 60 * 60
+DISTILLATION_MAX_ATTEMPTS = 4
 
 
 def _now() -> float:
@@ -217,6 +222,9 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
                 id TEXT PRIMARY KEY,
                 topic_id TEXT NOT NULL UNIQUE REFERENCES topics(id),
                 agent TEXT NOT NULL REFERENCES agents(name),
+                cycle_kind TEXT NOT NULL DEFAULT 'discovery' CHECK(cycle_kind IN
+                    ('discovery', 'distillation')),
+                source_cycle_id TEXT REFERENCES research_cycles(id),
                 domain_key TEXT NOT NULL,
                 domain_label TEXT NOT NULL,
                 domain_lens TEXT NOT NULL,
@@ -267,6 +275,43 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
             );
             CREATE INDEX IF NOT EXISTS research_source_order
                 ON research_sources(cycle_id, accessed_at, id);
+
+            CREATE TABLE IF NOT EXISTS distillation_jobs (
+                source_cycle_id TEXT PRIMARY KEY REFERENCES research_cycles(id),
+                status TEXT NOT NULL CHECK(status IN
+                    ('PENDING', 'PARTIAL', 'CONCEPTUALIZED', 'RAW_PRESERVED')),
+                attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+                max_attempts INTEGER NOT NULL DEFAULT 4 CHECK(max_attempts >= 1),
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                next_eligible_at REAL NOT NULL,
+                human_statement TEXT,
+                mechanism_summary TEXT
+            );
+            CREATE INDEX IF NOT EXISTS distillation_job_order
+                ON distillation_jobs(status, next_eligible_at, created_at);
+
+            CREATE TABLE IF NOT EXISTS distillation_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_cycle_id TEXT NOT NULL REFERENCES distillation_jobs(source_cycle_id),
+                attempt_cycle_id TEXT NOT NULL UNIQUE REFERENCES research_cycles(id),
+                domain_key TEXT NOT NULL,
+                domain_label TEXT NOT NULL,
+                domain_lens TEXT NOT NULL,
+                rng_seed INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN
+                    ('CONCEPTUALIZED', 'PARTIAL', 'NO_BRIDGE')),
+                human_statement TEXT,
+                mechanism TEXT,
+                standard_objects TEXT NOT NULL DEFAULT '[]',
+                minimal_example TEXT,
+                transfer_scope TEXT,
+                limitations TEXT NOT NULL DEFAULT '[]',
+                literature_queries TEXT NOT NULL DEFAULT '[]',
+                created_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS distillation_attempt_order
+                ON distillation_attempts(source_cycle_id, created_at, id);
             """
         )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(topics)")}
@@ -283,6 +328,38 @@ def init_db(db_path: Path | str = DEFAULT_DB) -> Path:
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
         if "available_at" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN available_at REAL NOT NULL DEFAULT 0")
+        cycle_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(research_cycles)")
+        }
+        if "cycle_kind" not in cycle_columns:
+            conn.execute(
+                "ALTER TABLE research_cycles ADD COLUMN cycle_kind "
+                "TEXT NOT NULL DEFAULT 'discovery'"
+            )
+        if "source_cycle_id" not in cycle_columns:
+            conn.execute("ALTER TABLE research_cycles ADD COLUMN source_cycle_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS research_cycle_kind_order "
+            "ON research_cycles(cycle_kind, created_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS research_cycle_source "
+            "ON research_cycles(source_cycle_id, created_at)"
+        )
+        # 이 기능 도입 전에 닫힌 의미 있는 결과도 잃지 않는다. INSERT OR IGNORE라서
+        # init/status를 반복 호출해도 시도 횟수나 기존 해석 상태를 덮어쓰지 않는다.
+        conn.execute(
+            """INSERT OR IGNORE INTO distillation_jobs
+               (source_cycle_id, status, attempt_count, max_attempts,
+                created_at, updated_at, next_eligible_at)
+               SELECT id, 'PENDING', 0, ?,
+                      COALESCE(closed_at, created_at),
+                      COALESCE(closed_at, created_at),
+                      COALESCE(closed_at, created_at)
+               FROM research_cycles
+               WHERE cycle_kind='discovery' AND status IN ('advanced', 'refuted')""",
+            (DISTILLATION_MAX_ATTEMPTS,),
+        )
     return path
 
 
@@ -471,6 +548,49 @@ def sync_open_questions(open_path: Path | str, recipient: str, *, min_active_age
             "active_agents": active, "created": created}
 
 
+def _recover_abandoned_research_cycles_in_tx(
+        conn: sqlite3.Connection, now: float) -> None:
+    """Close orphaned runtime cycles without reclassifying their source results."""
+    conn.execute(
+        """UPDATE research_cycles SET status='inconclusive', closed_at=?,
+           final_summary=COALESCE(final_summary,
+               'topic이 먼저 닫혀 연구 사이클을 보수적으로 종료했다.'),
+           failure_reason=COALESCE(failure_reason, 'topic_already_closed')
+           WHERE status='active' AND topic_id IN (
+               SELECT id FROM topics WHERE status='closed'
+           )""",
+        (now,),
+    )
+    abandoned = conn.execute(
+        """SELECT c.id, c.topic_id, c.cycle_kind FROM research_cycles c
+           JOIN topics t ON t.id=c.topic_id
+           WHERE c.status='active' AND t.status='open'
+             AND NOT EXISTS (
+                 SELECT 1 FROM messages m
+                 WHERE m.topic_id=c.topic_id
+                   AND m.status IN ('queued', 'leased')
+             )"""
+    ).fetchall()
+    for row in abandoned:
+        summary = "처리 가능한 메시지가 없어 연구 사이클을 보수적으로 종료했다."
+        close_reason = (
+            "distillation_abandoned"
+            if row["cycle_kind"] == "distillation" else "exploration_abandoned"
+        )
+        conn.execute(
+            """UPDATE research_cycles SET status='inconclusive', closed_at=?,
+               final_summary=?, failure_reason=? WHERE id=?""",
+            (now, summary, "heartbeat 중단 또는 메시지 TTL 만료", row["id"]),
+        )
+        conn.execute(
+            """UPDATE topics SET status='closed', closed_at=?,
+               close_reason=?, final_by='emergent-loop',
+               final_kind='SYNTHESIS', final_grade='UNASSESSED',
+               final_summary=? WHERE id=?""",
+            (now, close_reason, summary, row["topic_id"]),
+        )
+
+
 def seed_exploration(agent: str, *, seed: int | None = None,
                      max_cycles_per_day: int = 12, max_open_cycles: int = 1,
                      cooldown_seconds: int = 600, max_rounds: int = 6,
@@ -513,40 +633,7 @@ def seed_exploration(agent: str, *, seed: int | None = None,
 
             # TTL 만료나 중단된 heartbeat 뒤에 열린 cycle이 영원히 전역 한도를 점유하지
             # 않도록, 더 처리할 메시지가 없는 cycle은 보수적으로 INCONCLUSIVE 종료한다.
-            conn.execute(
-                """UPDATE research_cycles SET status='inconclusive', closed_at=?,
-                   final_summary=COALESCE(final_summary,
-                       'topic이 먼저 닫혀 탐사 사이클을 보수적으로 종료했다.'),
-                   failure_reason=COALESCE(failure_reason, 'topic_already_closed')
-                   WHERE status='active' AND topic_id IN (
-                       SELECT id FROM topics WHERE status='closed'
-                   )""",
-                (now,),
-            )
-            abandoned = conn.execute(
-                """SELECT c.id, c.topic_id FROM research_cycles c
-                   JOIN topics t ON t.id=c.topic_id
-                   WHERE c.status='active' AND t.status='open'
-                     AND NOT EXISTS (
-                         SELECT 1 FROM messages m
-                         WHERE m.topic_id=c.topic_id
-                           AND m.status IN ('queued', 'leased')
-                     )"""
-            ).fetchall()
-            for row in abandoned:
-                summary = "처리 가능한 메시지가 없어 탐사 사이클을 보수적으로 종료했다."
-                conn.execute(
-                    """UPDATE research_cycles SET status='inconclusive', closed_at=?,
-                       final_summary=?, failure_reason=? WHERE id=?""",
-                    (now, summary, "heartbeat 중단 또는 메시지 TTL 만료", row["id"]),
-                )
-                conn.execute(
-                    """UPDATE topics SET status='closed', closed_at=?,
-                       close_reason='exploration_abandoned', final_by='emergent-loop',
-                       final_kind='SYNTHESIS', final_grade='UNASSESSED',
-                       final_summary=? WHERE id=?""",
-                    (now, summary, row["topic_id"]),
-                )
+            _recover_abandoned_research_cycles_in_tx(conn, now)
 
             pending = conn.execute(
                 """SELECT COUNT(*) AS n
@@ -577,7 +664,7 @@ def seed_exploration(agent: str, *, seed: int | None = None,
             ).timestamp()
             today_count = conn.execute(
                 """SELECT COUNT(*) AS n FROM research_cycles
-                   WHERE agent=? AND created_at>=?""",
+                   WHERE agent=? AND cycle_kind='discovery' AND created_at>=?""",
                 (agent, day_start),
             ).fetchone()["n"]
             if today_count >= max_cycles_per_day:
@@ -598,7 +685,8 @@ def seed_exploration(agent: str, *, seed: int | None = None,
 
             recent = {row["domain_key"] for row in conn.execute(
                 """SELECT domain_key FROM research_cycles
-                   WHERE agent=? ORDER BY created_at DESC LIMIT 3""",
+                   WHERE agent=? AND cycle_kind='discovery'
+                   ORDER BY created_at DESC LIMIT 3""",
                 (agent,),
             )}
             candidates = [item for item in domain_deck if item[0] not in recent]
@@ -651,6 +739,229 @@ def seed_exploration(agent: str, *, seed: int | None = None,
                     "message_id": message_id, "rng_seed": seed,
                     "domain_key": domain_key, "domain_label": domain_label,
                     "domain_lens": domain_lens,
+                },
+            }
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def seed_distillation(
+        agent: str, *, seed: int | None = None, max_attempts_per_day: int = 4,
+        max_open_cycles: int = 1, cooldown_seconds: int = 600,
+        max_rounds: int = 1, max_messages: int = 1,
+        domain_deck: tuple[tuple[str, str, str], ...] = EXPLORATION_DOMAIN_DECK,
+        db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
+    """Create one post-result conceptual distillation attempt.
+
+    This scheduler never changes, ranks, or deletes the source cycle. It only appends a
+    bounded interpretation attempt. At most one distillation is placed between two fresh
+    discovery cycles so post-processing cannot starve unconstrained discovery.
+    """
+    if (max_attempts_per_day < 1 or max_open_cycles < 1 or cooldown_seconds < 0 or
+            max_rounds < 1 or max_messages < 1):
+        raise ValueError("증류 예산과 한도는 양수이고 cooldown은 0 이상이어야 함")
+    if not domain_deck:
+        raise ValueError("증류 분야 덱은 비어 있을 수 없음")
+    keys = [item[0] for item in domain_deck]
+    if len(keys) != len(set(keys)):
+        raise ValueError("증류 분야 key는 서로 달라야 함")
+    for item in domain_deck:
+        if len(item) != 3 or not all(
+                isinstance(value, str) and value.strip() for value in item):
+            raise ValueError("각 증류 분야는 비어 있지 않은 key/label/lens 삼중항이어야 함")
+    if seed is None:
+        seed = secrets.randbelow(2**63 - 1)
+    if not isinstance(seed, int) or not 0 <= seed < 2**63:
+        raise ValueError("seed는 0 이상 2^63 미만 정수여야 함")
+
+    init_db(db_path)
+    with _db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            now = _now()
+            registered = conn.execute(
+                "SELECT active FROM agents WHERE name=?", (agent,)
+            ).fetchone()
+            if registered is None or not registered["active"]:
+                raise KeyError(f"활성 agent가 아님: {agent}")
+            conn.execute("UPDATE agents SET last_seen=? WHERE name=?", (now, agent))
+            _recover_abandoned_research_cycles_in_tx(conn, now)
+
+            pending = conn.execute(
+                """SELECT COUNT(*) AS n
+                   FROM messages m JOIN topics t ON t.id=m.topic_id
+                   WHERE m.recipient=?
+                     AND (m.status='leased' OR
+                          (m.status='queued' AND m.available_at<=?))
+                     AND t.status='open'""",
+                (agent, now),
+            ).fetchone()["n"]
+            if pending:
+                conn.commit()
+                return {"status": "inbox_not_empty", "pending_messages": pending,
+                        "created": None}
+
+            open_rows = conn.execute(
+                """SELECT id, topic_id, cycle_kind, created_at FROM research_cycles
+                   WHERE status='active' ORDER BY created_at"""
+            ).fetchall()
+            if len(open_rows) >= max_open_cycles:
+                conn.commit()
+                return {"status": "open_cycle_limit", "open_cycles": len(open_rows),
+                        "created": None,
+                        "existing_cycle_id": str(open_rows[0]["id"])}
+
+            day_start = datetime.fromtimestamp(now, timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).timestamp()
+            today_count = conn.execute(
+                """SELECT COUNT(*) AS n FROM research_cycles
+                   WHERE agent=? AND cycle_kind='distillation' AND created_at>=?""",
+                (agent, day_start),
+            ).fetchone()["n"]
+            if today_count >= max_attempts_per_day:
+                conn.commit()
+                return {"status": "daily_budget", "attempts_today": today_count,
+                        "created": None}
+
+            last_distillation = conn.execute(
+                """SELECT created_at FROM research_cycles
+                   WHERE agent=? AND cycle_kind='distillation'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (agent,),
+            ).fetchone()
+            if last_distillation is not None:
+                discovery_since = conn.execute(
+                    """SELECT 1 FROM research_cycles
+                       WHERE agent=? AND cycle_kind='discovery' AND created_at>?
+                       LIMIT 1""",
+                    (agent, last_distillation["created_at"]),
+                ).fetchone()
+                if discovery_since is None:
+                    conn.commit()
+                    return {"status": "interleave_discovery", "created": None}
+
+            last_cycle = conn.execute(
+                """SELECT created_at FROM research_cycles
+                   WHERE agent=? ORDER BY created_at DESC LIMIT 1""",
+                (agent,),
+            ).fetchone()
+            if last_cycle is not None and now - last_cycle["created_at"] < cooldown_seconds:
+                remaining = int(cooldown_seconds - (now - last_cycle["created_at"]))
+                conn.commit()
+                return {"status": "cooldown", "retry_after_seconds": max(1, remaining),
+                        "created": None}
+
+            job = conn.execute(
+                """SELECT j.*, c.domain_key AS source_domain_key,
+                          c.status AS source_status, c.final_summary AS source_summary,
+                          c.failure_reason AS source_failure_reason
+                   FROM distillation_jobs j
+                   JOIN research_cycles c ON c.id=j.source_cycle_id
+                   WHERE j.status IN ('PENDING', 'PARTIAL')
+                     AND j.attempt_count < j.max_attempts
+                     AND j.next_eligible_at <= ?
+                     AND c.cycle_kind='discovery'
+                     AND c.status IN ('advanced', 'refuted')
+                     AND NOT EXISTS (
+                         SELECT 1 FROM research_cycles active
+                         WHERE active.cycle_kind='distillation'
+                           AND active.source_cycle_id=j.source_cycle_id
+                           AND active.status='active'
+                     )
+                   ORDER BY CASE j.status WHEN 'PENDING' THEN 0 ELSE 1 END,
+                            j.updated_at, j.created_at
+                   LIMIT 1""",
+                (now,),
+            ).fetchone()
+            if job is None:
+                waiting = conn.execute(
+                    """SELECT COUNT(*) AS n FROM distillation_jobs
+                       WHERE status IN ('PENDING', 'PARTIAL')
+                         AND attempt_count < max_attempts"""
+                ).fetchone()["n"]
+                conn.commit()
+                return {"status": "no_eligible_job", "waiting_jobs": waiting,
+                        "created": None}
+
+            tried = {row["domain_key"] for row in conn.execute(
+                """SELECT domain_key FROM distillation_attempts
+                   WHERE source_cycle_id=? ORDER BY created_at""",
+                (job["source_cycle_id"],),
+            )}
+            candidates = [
+                item for item in domain_deck
+                if item[0] != job["source_domain_key"] and item[0] not in tried
+            ]
+            if not candidates:
+                candidates = [
+                    item for item in domain_deck if item[0] != job["source_domain_key"]
+                ]
+            if not candidates:
+                candidates = list(domain_deck)
+            domain_key, domain_label, domain_lens = random.Random(seed).choice(candidates)
+
+            cycle_id = _cycle_id()
+            topic_id = _topic_id()
+            source_cycle_id = str(job["source_cycle_id"])
+            attempt_no = int(job["attempt_count"]) + 1
+            source_key = f"conceptual-distillation::{source_cycle_id}::{cycle_id}"
+            conn.execute(
+                """INSERT INTO topics
+                   (id, title, created_by, status, max_rounds, max_messages,
+                    created_at, source_key)
+                   VALUES (?, ?, ?, 'open', ?, ?, ?, ?)""",
+                (
+                    topic_id, f"개념 증류 — {source_cycle_id} × {domain_label}",
+                    agent, max_rounds, max_messages, now, source_key,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO research_cycles
+                   (id, topic_id, agent, cycle_kind, source_cycle_id, domain_key,
+                    domain_label, domain_lens, rng_seed, status, created_at)
+                   VALUES (?, ?, ?, 'distillation', ?, ?, ?, ?, ?, 'active', ?)""",
+                (
+                    cycle_id, topic_id, agent, source_cycle_id, domain_key,
+                    domain_label, domain_lens, seed, now,
+                ),
+            )
+            source_summary = str(job["source_summary"] or "요약 없음")
+            body = (
+                "CONCEPTUAL_DISTILLATION_CYCLE v1\n"
+                f"CYCLE_ID: {cycle_id}\nSOURCE_CYCLE_ID: {source_cycle_id}\n"
+                f"ATTEMPT: {attempt_no}/{job['max_attempts']}\nRNG_SEED: {seed}\n"
+                f"SOURCE_OUTCOME: {str(job['source_status']).upper()}\n"
+                f"SOURCE_SUMMARY: {source_summary}\n"
+                f"DOMAIN: {domain_label} ({domain_key})\nLENS: {domain_lens}\n"
+                "CONTRACT: 원본 결과·수식·등급·실패 기록은 불변이다. 이 시도는 원본을 "
+                "폐기·강등·LOW_YIELD 판정하거나 pruning에 쓰지 않는다.\n"
+                "MISSION: source cycle의 events/sources를 읽고 이 한 분야 렌즈로 사람에게 "
+                "의미 있는 명제 문장, 작동 메커니즘, 가장 작은 예, 성립 범위와 한계를 찾아라. "
+                "가능하면 표준 대상·알려진 정리와 연결하고 1차 문헌 검색어를 남겨라. 연결이 "
+                "약하면 억지 비유를 만들지 말고 PARTIAL 또는 NO_BRIDGE로 기록하라. 이 메시지는 "
+                "직접 처리하고 conceptualization 객체를 포함해 닫아라. 모든 내용은 여전히 "
+                "UNASSESSED_DIALOGUE_ONLY다."
+            )
+            message_id = _post_in_tx(
+                conn, topic_id=topic_id, sender="conceptual-distillation",
+                recipient=agent, kind="DIRECTION", grade="UNASSESSED", body=body,
+                evidence_refs=[
+                    f"math-dialogue-research-log/v1::{source_cycle_id}",
+                    "docs/RESEARCH_STATUS.md",
+                ],
+                parent_id=None, round_no=1, ttl_seconds=86400,
+            )
+            conn.commit()
+            return {
+                "status": "created",
+                "created": {
+                    "cycle_id": cycle_id, "topic_id": topic_id, "agent": agent,
+                    "message_id": message_id, "source_cycle_id": source_cycle_id,
+                    "attempt": attempt_no, "max_attempts": int(job["max_attempts"]),
+                    "rng_seed": seed, "domain_key": domain_key,
+                    "domain_label": domain_label, "domain_lens": domain_lens,
                 },
             }
         except Exception:
@@ -756,6 +1067,54 @@ def _research_sources(value: Any) -> list[dict[str, str]]:
     return normalized
 
 
+def _conceptualization(value: Any) -> dict[str, Any]:
+    """Validate a post-result interpretation without granting it truth authority."""
+    if not isinstance(value, dict):
+        raise ValueError("conceptualization은 객체여야 함")
+    allowed = {
+        "status", "human_statement", "mechanism", "standard_objects",
+        "minimal_example", "transfer_scope", "limitations", "literature_queries",
+    }
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError(f"conceptualization의 알 수 없는 필드: {sorted(unknown)}")
+    status = str(value.get("status", "")).strip().upper()
+    if status not in DISTILLATION_ATTEMPT_STATUSES:
+        raise ValueError(
+            "conceptualization.status는 다음 중 하나여야 함: "
+            f"{sorted(DISTILLATION_ATTEMPT_STATUSES)}"
+        )
+    human_statement = str(value.get("human_statement", "")).strip()
+    mechanism = str(value.get("mechanism", "")).strip()
+    standard_objects = _nonempty_string_list(
+        value.get("standard_objects", []), "conceptualization.standard_objects"
+    )
+    limitations = _nonempty_string_list(
+        value.get("limitations", []), "conceptualization.limitations"
+    )
+    literature_queries = _nonempty_string_list(
+        value.get("literature_queries", []), "conceptualization.literature_queries"
+    )
+    if status == "CONCEPTUALIZED" and (not human_statement or not mechanism):
+        raise ValueError("CONCEPTUALIZED에는 human_statement와 mechanism이 필요함")
+    if status == "PARTIAL" and not (
+        human_statement or mechanism or standard_objects
+    ):
+        raise ValueError("PARTIAL에는 문장·메커니즘·표준 대상 중 하나가 필요함")
+    if status == "NO_BRIDGE" and not limitations:
+        raise ValueError("NO_BRIDGE에는 시도한 연결의 한계를 limitations에 남겨야 함")
+    return {
+        "status": status,
+        "human_statement": human_statement,
+        "mechanism": mechanism,
+        "standard_objects": standard_objects,
+        "minimal_example": str(value.get("minimal_example", "")).strip(),
+        "transfer_scope": str(value.get("transfer_scope", "")).strip(),
+        "limitations": limitations,
+        "literature_queries": literature_queries,
+    }
+
+
 def _record_research_in_tx(conn: sqlite3.Connection, *, msg: sqlite3.Row,
                            agent: str, response: dict[str, Any], now: float,
                            close_topic: bool) -> None:
@@ -769,6 +1128,16 @@ def _record_research_in_tx(conn: sqlite3.Connection, *, msg: sqlite3.Row,
     log = _research_log(raw_log) if raw_log is not None else None
     sources = _research_sources(response.get("sources", []))
     cycle_id = str(cycle["id"]) if cycle is not None else None
+    cycle_kind = str(cycle["cycle_kind"]) if cycle is not None else None
+    raw_conceptualization = response.get("conceptualization")
+    if cycle_kind == "distillation" and close_topic and raw_conceptualization is None:
+        raise ValueError("개념 증류 종료 응답에는 conceptualization이 필요함")
+    if cycle_kind != "distillation" and raw_conceptualization is not None:
+        raise ValueError("conceptualization은 개념 증류 사이클에서만 기록할 수 있음")
+    conceptualization = (
+        _conceptualization(raw_conceptualization)
+        if raw_conceptualization is not None else None
+    )
 
     if log is not None:
         conn.execute(
@@ -808,6 +1177,69 @@ def _record_research_in_tx(conn: sqlite3.Connection, *, msg: sqlite3.Row,
              json.dumps(log["reusable_clues"], ensure_ascii=False),
              json.dumps(log["next_questions"], ensure_ascii=False), cycle_id),
         )
+        if cycle_kind == "discovery" and final_outcome in DISTILLABLE_OUTCOMES:
+            conn.execute(
+                """INSERT OR IGNORE INTO distillation_jobs
+                   (source_cycle_id, status, attempt_count, max_attempts,
+                    created_at, updated_at, next_eligible_at)
+                   VALUES (?, 'PENDING', 0, ?, ?, ?, ?)""",
+                (cycle_id, DISTILLATION_MAX_ATTEMPTS, now, now, now),
+            )
+        elif cycle_kind == "distillation":
+            assert conceptualization is not None
+            source_cycle_id = str(cycle["source_cycle_id"] or "")
+            if not source_cycle_id:
+                raise ValueError("개념 증류 사이클에 source_cycle_id가 없음")
+            job = conn.execute(
+                "SELECT * FROM distillation_jobs WHERE source_cycle_id=?",
+                (source_cycle_id,),
+            ).fetchone()
+            if job is None:
+                raise ValueError(f"개념 증류 원본 job이 없음: {source_cycle_id}")
+            conn.execute(
+                """INSERT INTO distillation_attempts
+                   (source_cycle_id, attempt_cycle_id, domain_key, domain_label,
+                    domain_lens, rng_seed, status, human_statement, mechanism,
+                    standard_objects, minimal_example, transfer_scope, limitations,
+                    literature_queries, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    source_cycle_id, cycle_id, cycle["domain_key"],
+                    cycle["domain_label"], cycle["domain_lens"], cycle["rng_seed"],
+                    conceptualization["status"],
+                    conceptualization["human_statement"] or None,
+                    conceptualization["mechanism"] or None,
+                    json.dumps(conceptualization["standard_objects"], ensure_ascii=False),
+                    conceptualization["minimal_example"] or None,
+                    conceptualization["transfer_scope"] or None,
+                    json.dumps(conceptualization["limitations"], ensure_ascii=False),
+                    json.dumps(conceptualization["literature_queries"], ensure_ascii=False),
+                    now,
+                ),
+            )
+            attempt_count = int(job["attempt_count"]) + 1
+            if conceptualization["status"] == "CONCEPTUALIZED":
+                job_status = "CONCEPTUALIZED"
+                next_eligible_at = now
+            elif attempt_count >= int(job["max_attempts"]):
+                job_status = "RAW_PRESERVED"
+                next_eligible_at = now
+            else:
+                job_status = "PARTIAL"
+                next_eligible_at = now + DISTILLATION_REVISIT_SECONDS
+            conn.execute(
+                """UPDATE distillation_jobs
+                   SET status=?, attempt_count=?, updated_at=?, next_eligible_at=?,
+                       human_statement=COALESCE(?, human_statement),
+                       mechanism_summary=COALESCE(?, mechanism_summary)
+                   WHERE source_cycle_id=?""",
+                (
+                    job_status, attempt_count, now, next_eligible_at,
+                    conceptualization["human_statement"] or None,
+                    conceptualization["mechanism"] or None,
+                    source_cycle_id,
+                ),
+            )
 
 
 def _post_in_tx(conn: sqlite3.Connection, *, topic_id: str, sender: str,
@@ -909,7 +1341,9 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
                           c.domain_key AS exploration_domain_key,
                           c.domain_label AS exploration_domain_label,
                           c.domain_lens AS exploration_domain_lens,
-                          c.rng_seed AS exploration_rng_seed
+                          c.rng_seed AS exploration_rng_seed,
+                          c.cycle_kind AS research_cycle_kind,
+                          c.source_cycle_id AS distillation_source_cycle_id
                    FROM messages m JOIN topics t ON t.id=m.topic_id
                    LEFT JOIN research_cycles c ON c.topic_id=t.id
                    WHERE m.recipient=? AND m.status='queued' AND m.available_at<=?
@@ -933,7 +1367,9 @@ def claim_message(agent: str, *, lease_seconds: int = 900,
                           c.domain_key AS exploration_domain_key,
                           c.domain_label AS exploration_domain_label,
                           c.domain_lens AS exploration_domain_lens,
-                          c.rng_seed AS exploration_rng_seed
+                          c.rng_seed AS exploration_rng_seed,
+                          c.cycle_kind AS research_cycle_kind,
+                          c.source_cycle_id AS distillation_source_cycle_id
                    FROM messages m JOIN topics t ON t.id=m.topic_id
                    LEFT JOIN research_cycles c ON c.topic_id=t.id
                    WHERE m.id=?""",
@@ -951,21 +1387,31 @@ def claim_for_heartbeat(agent: str, *, lease_seconds: int = 900,
                         db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
     """기존 strategist automation도 수정 없이 창발 루프에 들어가게 하는 CLI 경계.
 
-    먼저 일반 inbox를 선점한다. 비어 있고 agent가 strategist일 때만 bounded seed를 한 번
-    호출하고, 생성됐다면 그 메시지를 즉시 선점한다. 라이브러리 API ``claim_message``의
-    기존 의미는 바꾸지 않아 relay와 테스트의 하위호환을 유지한다.
+    먼저 일반 inbox를 선점한다. 비어 있고 agent가 strategist일 때만 결과 후 증류를 먼저
+    확인하고, 대상이 없거나 발견 interleave 차례면 bounded 탐사를 호출한다. 생성된 메시지는
+    즉시 선점한다. 라이브러리 API ``claim_message``의 기존 의미는 바꾸지 않는다.
     """
     item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
+    distilled = None
     seeded = None
     if item is None and idle_exploration and agent == "strategist":
-        seeded = seed_exploration(agent, db_path=db_path)
-        if seeded["status"] == "created":
+        distilled = seed_distillation(agent, db_path=db_path)
+        if distilled["status"] == "created":
             item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
             if item is None:
-                raise RuntimeError("생성한 탐사 메시지를 즉시 선점하지 못함")
+                raise RuntimeError("생성한 개념 증류 메시지를 즉시 선점하지 못함")
+        elif distilled["status"] == "inbox_not_empty":
+            item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
+        else:
+            seeded = seed_exploration(agent, db_path=db_path)
+            if seeded["status"] == "created":
+                item = claim_message(agent, lease_seconds=lease_seconds, db_path=db_path)
+                if item is None:
+                    raise RuntimeError("생성한 탐사 메시지를 즉시 선점하지 못함")
     return {
         "status": "claimed" if item is not None else "no_work",
         "message": item,
+        "idle_distillation": distilled,
         "idle_exploration": seeded,
     }
 
@@ -1117,6 +1563,22 @@ def topic_transcript(topic_id: str, *, db_path: Path | str = DEFAULT_DB) -> dict
         sources = conn.execute(
             "SELECT * FROM research_sources WHERE topic_id=? ORDER BY id", (topic_id,)
         ).fetchall()
+        distillation_job = None
+        distillation_attempts: list[sqlite3.Row] = []
+        if cycle is not None:
+            source_cycle_id = (
+                cycle["source_cycle_id"]
+                if cycle["cycle_kind"] == "distillation" else cycle["id"]
+            )
+            distillation_job = conn.execute(
+                "SELECT * FROM distillation_jobs WHERE source_cycle_id=?",
+                (source_cycle_id,),
+            ).fetchone()
+            distillation_attempts = conn.execute(
+                """SELECT * FROM distillation_attempts
+                   WHERE source_cycle_id=? ORDER BY created_at, id""",
+                (source_cycle_id,),
+            ).fetchall()
     t = dict(topic)
     t["final_evidence_refs"] = json.loads(t["final_evidence_refs"])
     for key in ("created_at", "closed_at"):
@@ -1128,6 +1590,13 @@ def topic_transcript(topic_id: str, *, db_path: Path | str = DEFAULT_DB) -> dict
         "research_cycle": cycle_out,
         "research_events": [_event_dict(row) for row in events],
         "research_sources": [_source_dict(row) for row in sources],
+        "distillation_job": (
+            _distillation_job_dict(distillation_job)
+            if distillation_job is not None else None
+        ),
+        "distillation_attempts": [
+            _distillation_attempt_dict(row) for row in distillation_attempts
+        ],
         "authority": "UNASSESSED_DIALOGUE_ONLY",
     }
 
@@ -1156,6 +1625,21 @@ def _source_dict(row: sqlite3.Row) -> dict[str, Any]:
     return out
 
 
+def _distillation_job_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    for key in ("created_at", "updated_at", "next_eligible_at"):
+        out[key] = _iso(out[key])
+    return out
+
+
+def _distillation_attempt_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    out["created_at"] = _iso(out["created_at"])
+    for key in ("standard_objects", "limitations", "literature_queries"):
+        out[key] = json.loads(out[key])
+    return out
+
+
 def research_log_view(*, cycle_id: str | None = None, limit: int = 100,
                       db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
     """Second-brain adapter가 소비할 수 있는 안정적인 JSON 연구 로그를 돌려준다."""
@@ -1179,6 +1663,19 @@ def research_log_view(*, cycle_id: str | None = None, limit: int = 100,
                    ORDER BY accessed_at, id LIMIT ?""",
                 (cycle_id, limit),
             ).fetchall()
+            source_cycle_id = (
+                cycles[0]["source_cycle_id"]
+                if cycles[0]["cycle_kind"] == "distillation" else cycles[0]["id"]
+            )
+            distillation_jobs = conn.execute(
+                "SELECT * FROM distillation_jobs WHERE source_cycle_id=?",
+                (source_cycle_id,),
+            ).fetchall()
+            distillation_attempts = conn.execute(
+                """SELECT * FROM distillation_attempts
+                   WHERE source_cycle_id=? ORDER BY created_at, id LIMIT ?""",
+                (source_cycle_id, limit),
+            ).fetchall()
         else:
             cycles = conn.execute(
                 "SELECT * FROM research_cycles ORDER BY created_at DESC LIMIT ?",
@@ -1192,11 +1689,27 @@ def research_log_view(*, cycle_id: str | None = None, limit: int = 100,
                 "SELECT * FROM research_sources ORDER BY accessed_at DESC, id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+            distillation_jobs = conn.execute(
+                """SELECT * FROM distillation_jobs
+                   ORDER BY updated_at DESC, created_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            distillation_attempts = conn.execute(
+                """SELECT * FROM distillation_attempts
+                   ORDER BY created_at DESC, id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
     return {
         "schema": "math-dialogue-research-log/v1",
         "cycles": [_cycle_dict(row) for row in cycles],
         "events": [_event_dict(row) for row in events],
         "sources": [_source_dict(row) for row in sources],
+        "distillation_jobs": [
+            _distillation_job_dict(row) for row in distillation_jobs
+        ],
+        "distillation_attempts": [
+            _distillation_attempt_dict(row) for row in distillation_attempts
+        ],
         "authority": "UNASSESSED_DIALOGUE_ONLY",
     }
 
@@ -1226,7 +1739,13 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
         research_counts = {
             "events": conn.execute("SELECT COUNT(*) AS n FROM research_events").fetchone()["n"],
             "sources": conn.execute("SELECT COUNT(*) AS n FROM research_sources").fetchone()["n"],
+            "distillation_attempts": conn.execute(
+                "SELECT COUNT(*) AS n FROM distillation_attempts"
+            ).fetchone()["n"],
         }
+        distillation_states = {row["status"]: row["n"] for row in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM distillation_jobs GROUP BY status"
+        )}
     freshness_cutoff = _now() - 1800
     for agent in agents:
         agent["fresh"] = bool(agent["active"] and agent["last_seen"] >= freshness_cutoff)
@@ -1239,6 +1758,7 @@ def system_status(*, db_path: Path | str = DEFAULT_DB) -> dict[str, Any]:
             "topics": topics, "message_states": states,
             "deferred_messages": deferred_messages,
             "research_cycle_states": cycle_states, "research_counts": research_counts,
+            "distillation_job_states": distillation_states,
             "authority": "UNASSESSED_DIALOGUE_ONLY"}
 
 
@@ -1416,6 +1936,7 @@ def selftest() -> None:
         assert logged["schema"] == "math-dialogue-research-log/v1"
         assert logged["cycles"][0]["status"] == "low_yield"
         assert len(logged["events"]) == 1 and len(logged["sources"]) == 1
+        assert logged["distillation_jobs"] == []
         assert logged["sources"][0]["verification_level"] == "FULLTEXT"
         cooling = seed_exploration(
             "explorer-a", seed=1, cooldown_seconds=1800,
@@ -1427,6 +1948,107 @@ def selftest() -> None:
             max_cycles_per_day=1, db_path=db,
         )
         assert budgeted["status"] == "daily_budget"
+
+        # 의미 있는 결과는 원본과 분리된 개념 증류 job을 만들고, 실패해도 원본을
+        # 강등하거나 덮어쓰지 않은 채 RAW_PRESERVED로 남긴다.
+        distill_db = Path(td) / "distillation.sqlite3"
+        register_agent("strategist", "발견·결과 후 개념 증류", db_path=distill_db)
+        source_seed = seed_exploration(
+            "strategist", seed=101, cooldown_seconds=0, db_path=distill_db,
+        )
+        assert source_seed["status"] == "created"
+        source_message = claim_message("strategist", db_path=distill_db)
+        assert source_message and source_message["research_cycle_kind"] == "discovery"
+        source_cycle_id = source_seed["created"]["cycle_id"]
+        source_result = submit_response("strategist", source_message["id"], {
+            "close_topic": True,
+            "kind": "SYNTHESIS",
+            "grade": "UNASSESSED",
+            "body": "병리적인 식이지만 유한 범위에서 재현되는 구조를 찾았다.",
+            "research_log": {
+                "event_type": "SYNTHESIS",
+                "summary": "원본 식과 범위 표기를 보존해야 하는 계산적 구조",
+                "approach": "국소 부호 제약을 직접 열거했다.",
+                "outcome": "ADVANCED",
+                "failure_reason": "",
+                "reusable_clues": ["8개 상태의 동일한 실패 패턴"],
+                "next_questions": ["표준 불변량으로 압축되는가?"],
+            },
+        }, db_path=distill_db)
+        assert source_result["topic_closed"] is True
+        source_log = research_log_view(cycle_id=source_cycle_id, db_path=distill_db)
+        assert source_log["distillation_jobs"][0]["status"] == "PENDING"
+        assert source_log["distillation_jobs"][0]["max_attempts"] == 4
+        # 기존 DB에 완료 cycle만 있고 job table이 비어 있던 migration도 backfill한다.
+        with _db(distill_db) as conn:
+            conn.execute(
+                "DELETE FROM distillation_jobs WHERE source_cycle_id=?",
+                (source_cycle_id,),
+            )
+        init_db(distill_db)
+        migrated_source = research_log_view(
+            cycle_id=source_cycle_id, db_path=distill_db,
+        )
+        assert migrated_source["distillation_jobs"][0]["status"] == "PENDING"
+        with _db(distill_db) as conn:
+            source_before = dict(conn.execute(
+                "SELECT * FROM research_cycles WHERE id=?", (source_cycle_id,)
+            ).fetchone())
+            # 한 번의 NO_BRIDGE로 예산 소진 상태를 검사하기 위한 selftest 전용 축소다.
+            conn.execute(
+                "UPDATE distillation_jobs SET max_attempts=1 WHERE source_cycle_id=?",
+                (source_cycle_id,),
+            )
+        distillation_seed = seed_distillation(
+            "strategist", seed=202, cooldown_seconds=0, db_path=distill_db,
+        )
+        assert distillation_seed["status"] == "created"
+        assert distillation_seed["created"]["source_cycle_id"] == source_cycle_id
+        assert (
+            distillation_seed["created"]["domain_key"]
+            != source_seed["created"]["domain_key"]
+        )
+        distillation_message = claim_message("strategist", db_path=distill_db)
+        assert distillation_message
+        assert distillation_message["research_cycle_kind"] == "distillation"
+        assert distillation_message["distillation_source_cycle_id"] == source_cycle_id
+        distilled_result = submit_response("strategist", distillation_message["id"], {
+            "close_topic": True,
+            "kind": "SYNTHESIS",
+            "grade": "UNASSESSED",
+            "body": "선택 렌즈에서는 정직한 구조적 연결을 만들지 못했다.",
+            "research_log": {
+                "event_type": "FAILURE",
+                "summary": "한 분야 렌즈의 개념 압축 실패",
+                "approach": "표준 대상과 원본 패턴의 보존량을 비교했다.",
+                "outcome": "LOW_YIELD",
+                "failure_reason": "대응이 예시 밖에서 보존되지 않았다.",
+                "reusable_clues": ["상태 수는 맞지만 작용이 맞지 않음"],
+                "next_questions": ["다른 군 작용에서는 보존되는가?"],
+            },
+            "conceptualization": {
+                "status": "NO_BRIDGE",
+                "human_statement": "",
+                "mechanism": "",
+                "standard_objects": [],
+                "minimal_example": "",
+                "transfer_scope": "",
+                "limitations": ["선택한 작용이 원본 재배향을 보존하지 않음"],
+                "literature_queries": ["switching class invariant group action"],
+            },
+        }, db_path=distill_db)
+        assert distilled_result["topic_closed"] is True
+        after_distillation = research_log_view(
+            cycle_id=source_cycle_id, db_path=distill_db,
+        )
+        assert after_distillation["distillation_jobs"][0]["status"] == "RAW_PRESERVED"
+        assert after_distillation["distillation_jobs"][0]["attempt_count"] == 1
+        assert after_distillation["distillation_attempts"][0]["status"] == "NO_BRIDGE"
+        with _db(distill_db) as conn:
+            source_after = dict(conn.execute(
+                "SELECT * FROM research_cycles WHERE id=?", (source_cycle_id,)
+            ).fetchone())
+        assert source_after == source_before
 
         # 동시에 seed해도 global open-cycle 한도를 넘지 않는다.
         register_agent("explorer-b", "창발 탐사 B", db_path=db)
@@ -1488,7 +2110,8 @@ def selftest() -> None:
             "strategist", idle_exploration=False, db_path=plain_db,
         )
         assert plain_claim == {
-            "status": "no_work", "message": None, "idle_exploration": None
+            "status": "no_work", "message": None,
+            "idle_distillation": None, "idle_exploration": None
         }
 
         # 동료 부재로 release한 일반 질문은 잠시 defer되어 탐사 pivot을 막지 않는다.
@@ -1533,7 +2156,10 @@ def selftest() -> None:
             "heartbeat 중단 또는 메시지 TTL 만료"
         )
 
-    print("math_dialogue selftest OK (토론, 동시선점, OPEN 동기화, 창발 탐사 로그)")
+    print(
+        "math_dialogue selftest OK "
+        "(토론, 동시선점, OPEN 동기화, 창발 탐사, 결과 후 개념 증류)"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1583,7 +2209,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", required=True)
     p.add_argument("--lease-seconds", type=int, default=900)
     p.add_argument("--no-idle-exploration", action="store_true",
-                   help="strategist inbox가 비어도 창발 탐사를 만들지 않음")
+                   help="strategist inbox가 비어도 개념 증류·창발 탐사를 만들지 않음")
 
     p = sub.add_parser("release", help="처리하지 않은 선점 메시지를 큐로 반환")
     p.add_argument("--agent", required=True)
@@ -1613,6 +2239,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cooldown-seconds", type=int, default=600)
     p.add_argument("--max-rounds", type=int, default=6)
     p.add_argument("--max-messages", type=int, default=8)
+    p = sub.add_parser("seed-distillation", help="완료 결과의 분야별 개념 증류 시도 생성")
+    p.add_argument("--agent", default="strategist")
+    p.add_argument("--seed", type=int)
+    p.add_argument("--max-attempts-per-day", type=int, default=4)
+    p.add_argument("--max-open-cycles", type=int, default=1)
+    p.add_argument("--cooldown-seconds", type=int, default=600)
+    p.add_argument("--max-rounds", type=int, default=1)
+    p.add_argument("--max-messages", type=int, default=1)
     p = sub.add_parser("research-log", help="구조화 연구 사이클·사건·출처 JSON 조회")
     p.add_argument("--cycle")
     p.add_argument("--limit", type=int, default=100)
@@ -1674,6 +2308,15 @@ def main(argv: list[str] | None = None) -> int:
         _json_print(seed_exploration(
             args.agent, seed=args.seed,
             max_cycles_per_day=args.max_cycles_per_day,
+            max_open_cycles=args.max_open_cycles,
+            cooldown_seconds=args.cooldown_seconds,
+            max_rounds=args.max_rounds, max_messages=args.max_messages,
+            db_path=db,
+        ))
+    elif args.command == "seed-distillation":
+        _json_print(seed_distillation(
+            args.agent, seed=args.seed,
+            max_attempts_per_day=args.max_attempts_per_day,
             max_open_cycles=args.max_open_cycles,
             cooldown_seconds=args.cooldown_seconds,
             max_rounds=args.max_rounds, max_messages=args.max_messages,

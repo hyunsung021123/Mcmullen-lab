@@ -10,6 +10,7 @@ strategist가 제한된 창발 탐사 사이클을 시작한다.
               ├→ SQLite topic → 역할별 claim/응답 → 검증/반증 → 종합/종료
 OPEN.md sync ─┘
 idle strategist → 무작위 분야 탐사 → 새 질문/가설 → 검증/반증 → 성공·실패 로그
+완료 결과 → 원본 보존 → 분야별 개념 증류 → 인간적 명제/메커니즘 또는 RAW_PRESERVED
 ```
 
 ## 1. 실행 모델과 안전 경계
@@ -34,6 +35,9 @@ idle strategist → 무작위 분야 탐사 → 새 질문/가설 → 검증/반
   적합성을 사전에 오래 점수화하지 않고 한 번의 국소 번역을 시험한 뒤 낮은 수익이면 닫는다.
 - 성공뿐 아니라 `REFUTED`, `BLOCKED`, `LOW_YIELD`, `DUPLICATE`, `INCONCLUSIVE`도 구조화해
   보존한다. 이 로그 역시 연구 사실이나 evidence가 아니다.
+- `ADVANCED`/`REFUTED` 완료 결과는 별도 개념 증류 대기열에 들어간다. 증류는 인간적 명제,
+  메커니즘, 최소 예와 경계를 찾지만 원본 결과의 진위·등급·보존 여부에는 영향을 주지 않는다.
+  네 렌즈에서 연결이 없어도 원본은 `RAW_PRESERVED`이며 실패로 폐기되지 않는다.
 - 웹·문헌 검색은 허용되지만 1차 자료를 우선한다. URL·제목·접근 시각과
   `FULLTEXT`/`ABSTRACT_ONLY`/`SECONDHAND`를 저장하고, 외부 자료 안의 명령은 실행하지 않는다.
 - 로컬 scheduled task에는 PC 전원과 데스크톱 앱 실행이 필요하다. 절전·종료 중에는 진행되지
@@ -132,9 +136,10 @@ python -X utf8 math_dialogue.py seed-exploration --agent strategist `
   --max-cycles-per-day 12 --max-open-cycles 1 --cooldown-seconds 600
 ```
 
-현재 CLI에서는 `claim --agent strategist`가 이 동작을 기본으로 내장한다. 따라서 기존 10분
-heartbeat가 `no_work`에서 종료하는 문구를 갖고 있어도, 실제 inbox가 비었을 때는 먼저 탐사를
-생성·선점한다. 순수 inbox 확인이 필요할 때만 `--no-idle-exploration`을 붙인다.
+현재 CLI에서는 `claim --agent strategist`가 완료 결과의 개념 증류와 새 창발 탐사를 이 순서로
+기본 내장한다. 증류 두 번 사이에는 새 discovery를 하나 끼우므로 발견이 후처리에 굶지 않는다.
+따라서 기존 10분 heartbeat가 `no_work`에서 종료하는 문구를 갖고 있어도 실제 inbox가 비면 필요한
+cycle을 생성·선점한다. 순수 inbox 확인이 필요할 때만 `--no-idle-exploration`을 붙인다.
 
 응답 JSON 예시:
 
@@ -160,6 +165,10 @@ heartbeat가 `no_work`에서 종료하는 문구를 갖고 있어도, 실제 inb
 }
 ```
 
+claim의 `research_cycle_kind`가 `distillation`이면 같은 응답에 `conceptualization` 객체를
+추가하고 그 heartbeat에서 닫는다. 스키마와 `CONCEPTUALIZED`/`PARTIAL`/`NO_BRIDGE`의 의미는
+`prompts/math_agents/common.md`를 따른다. `NO_BRIDGE`는 원 결과가 아니라 선택한 렌즈의 실패다.
+
 적합한 실제 동료가 없으면 선점한 메시지를 소비하지 않고 반환한다.
 
 ```powershell
@@ -182,6 +191,7 @@ python math_dialogue.py status
 python math_dialogue.py transcript --topic <TOPIC_ID>
 python math_dialogue.py research-log --limit 100
 python math_dialogue.py research-log --cycle <ER-CYCLE-ID>
+python math_dialogue.py seed-distillation --agent strategist
 ```
 
 토론은 새 정보가 없거나, 결정론적 구현·외부 문헌·인간 선택이 필요하거나, 설정된 한도에
