@@ -859,3 +859,150 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
   `theorist.py`의 결정론적 적대자 로직은 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0037 — 로컬 수학 Codex task 토론은 권한 없는 우편함으로 분리
+
+- 날짜: 2026-08-12
+- 제안자: human (여러 수학 Codex 세션의 자동 토론 환경 요청) → codex (구현)
+- 관련 Issue: #69
+- 결정 1 — 같은 checkout을 보는 여러 heartbeat의 간접 통신에 `math_dialogue.py` SQLite
+  우편함을 쓴다. `BEGIN IMMEDIATE` 선점, lease 만료, TTL, 최대 라운드와 최대 메시지 수로
+  동시 처리와 무한 자기대화를 제한한다.
+- 결정 2 — 우편함은 런타임 운반 계층이며 `.math_dialogue/`는 Git에서 제외한다. 장기 공유
+  기억은 계속 Git·Issue·`insight_ledger.py`·evidence DB가 담당한다.
+- 결정 3 — 모든 토론 산출물의 권한은 `UNASSESSED_DIALOGUE_ONLY`다. 메시지에 적힌 grade는
+  작성자의 자체 분류이며 evidence가 아니다. ledger 상태 전이, witness 판정, pruning,
+  실현가능성 결론으로 자동 승격하는 경로를 만들지 않는다.
+- 결정 4 — heartbeat 한 번은 메시지 하나만 `claim → 응답 파일 → submit`하고 끝낸다.
+  상대 task 직접 호출이나 같은 실행에서 연속 claim하는 구조는 금지한다. 실제 task 생성과
+  heartbeat 활성화는 모의 selftest와 수동 왕복을 통과한 뒤 별도로 수행한다.
+- 영향 범위: 신규 `math_dialogue.py`, 설정 문서와 역할 프롬프트, 패키징·CI·gitignore.
+  `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.
+
+## 0038 — 수학 task는 범용 역할과 기존-thread heartbeat로 자율 운영
+
+- 날짜: 2026-08-12
+- 제안자: human (최초 역할 지정 뒤 무개입 자율 토론 요청) → codex (설계·구현)
+- 관련 Issue/PR: #69 / #70
+- 결정 1 — 매 실행마다 새 task를 만드는 standalone schedule이 아니라, 각 기존 수학 task의
+  문맥을 유지하는 10분 heartbeat를 쓴다. heartbeat는 같은 local checkout에서 메시지 한 건만
+  처리한다.
+- 결정 2 — 권장 역할은 `strategist`(정식화·분해·종합), `prover`(증명 구성),
+  `falsifier`(반증·감사), `experimentalist`(결정론적 계산)다. task가 2개뿐이면 이를
+  `builder`와 `critic`으로 합치되 구성과 공격 관점은 분리한다.
+- 결정 3 — intake 역할은 active agent가 2명 이상일 때 `questions/OPEN.md`의 새 `OPEN`
+  질문을 source key로 중복 없이 한 번에 하나씩 투입한다. 동시에 열린 저장소 topic은 기본
+  2개로 제한한다. heartbeat `last_seen`이 기본 30분 넘게 갱신되지 않은 agent는 새 작업을
+  받을 active roster에서 제외한다.
+- 결정 4 — 실제 운영 경로는 이미 Git에서 제외되는
+  `local_runs/math_dialogue/dialogue.sqlite3`로 둔다. 이는 0037의 초기 `.math_dialogue/`
+  경로를 대체한다.
+- 결정 5 — 자동 task는 tracked 파일을 수정하지 않는다. 초안과 계산 산출물은 `local_runs`
+  아래에 두고, 사람이 검토한 뒤 기존 insight/evidence 절차로만 승격한다.
+- 영향 범위: `math_dialogue.py`의 idempotent enqueue·OPEN 질문 sync·lease release, 범용 역할
+  프롬프트와 운영 문서. 수학 판정·검사기 경로는 무변경.
+
+## 0039 — 계산 의무는 request/result 규격으로 전달하고, 실행 권한은 검토된 plan 에만 준다
+
+- 날짜: 2026-08-12
+- 제안자: human (Codex 수학 세션 → Claude 계산 실험 비동기 전달 요청) → claude-code (설계·구현)
+- 관련 Issue/PR: #70 의 후속 (`claude/71-computation-relay`, PR #70 병합 의존)
+- 결정 1 — provider-neutral 한 `computation-request/v1` 과 `computation-result/v1` 을 정의한다.
+  요청은 claim·quantifiers·assumptions·scope·realizability·invariance·결정론적 oracle·
+  controls·전수 기대치·중단 규칙·자원 예산·source_refs·return_to 를 갖는다. 결과는
+  outcome·trust class·소진 범위·확인/기대 개수·명령·seed·Python/solver 버전·commit 또는
+  snapshot_id·artifact SHA-256·최초 실패와 반례를 갖는다.
+- 결정 2 — **request 는 데이터다.** 스키마에 명령을 담을 필드가 없고, `commands`/`argv`/
+  `script`/`shell`/`code` 류의 키가 하위 어디에 나타나도 재귀 스캔이 거부한다. 실행 대상은
+  계산 담당 agent 가 작성하고 `reviewed: true` 로 승인한 `experiment-plan/v1` 의 commands
+  뿐이며, `run` 은 request 파일을 열지 않는다. `argv[0]` 은 Python 인터프리터로 제한하고
+  승격 계층(`insight_ledger`·`evidence_db`·`--promote`)을 건드리는 명령은 정적으로 막는다.
+- 결정 3 — `trust_class` 는 호출자가 지정할 수 없고 outcome·전수 개수 일치·대조군·명령
+  종료코드·tracked guard 에서 도출한다(0023 의 `derive_trust_status` 와 같은 규율).
+  `PROVEN`/`VERIFIED`/`CERTIFIED` 계열은 이 계층이 만들 수 없다. 전수 개수가 어긋나면
+  등급을 낮추는 것이 아니라 **결과 자체를 거부**한다 — 조용히 강등하면 "전수했다"는 문장이
+  산출물에 그대로 남기 때문이다. 반례 없는 `REFUTED` 도 거부한다.
+- 결정 4 — 자동 실행은 tracked 파일을 수정하지 않는다. 실행 전후 `git status --porcelain`
+  의 tracked 변경 집합을 비교해 달라지면 그 run 을 봉인하고 등급을 `UNRESOLVED` 로 떨어뜨린다.
+  산출물은 gitignore 된 `local_runs/math_dialogue/computation_requests/` 와
+  `computation_runs/` 아래에만 원자적으로(`os.replace`) 쓴다. `experiments/` 나 evidence 로의
+  승격은 사람 검토 후 별도 PR 로만 한다 (0038 결정 5 의 연장).
+- 결정 5 — 큐는 우편함과 같은 SQLite 파일의 `computation_requests` 테이블로 둔다. 원자적
+  선점·lease/TTL·만료 복구를 새로 만들지 않고 `math_dialogue` 와 같은 검증된 방식을 쓴다.
+  중복은 `request_id` 와 **내용 해시**(제목·시각 제외) 두 축으로 막아, 새 id 를 붙인 같은
+  계산 의무도 거부한다.
+- 결정 6 — 우편함 메시지 종류에 `COMPUTATION_REQUEST`·`EXPERIMENT_PLAN`·`COMPUTATION_RESULT`
+  를 추가한다. `KINDS = DIALOGUE_KINDS | COMPUTATION_KINDS` 로 기존 8종을 그대로 두는 상위집합
+  이며, `kind` 컬럼에 CHECK 제약이 없어 과거 행도 그대로 읽힌다.
+- 결정 7 — 모든 CLI 출력과 하위 프로세스를 UTF-8 로 강제하고, 출력 실패가 종료 코드를
+  바꾸지 않게 한다. Windows cp949 에서 출력이 죽으면 호출자가 재시도해 같은 request 를 두 번
+  claim 하는 사고가 나기 때문이다. 그럼에도 재시도가 안전하도록 claim/post/submit 을 전부
+  idempotent 로 만든다.
+- 영향 범위: 신규 `computation_relay.py`·`scripts/relay_demo_enumerate.py`·
+  `docs/COMPUTATION_RELAY.md`·fixtures 3종, `math_dialogue.py` 의 KINDS 확장(추가만),
+  CI/pyproject/CLAUDE.md 등록. `om_core.py` 를 비롯한 기존 결정론적 판정 권한은 무변경.
+
+## 0040 — 유휴 strategist는 무작위 분야를 짧게 탐사하고 실패까지 구조화한다
+
+- 날짜: 2026-08-12
+- 제안자: human (다분야 창발 질문·가설 생성과 실패 연구 축적 요청) → codex (설계·구현)
+- 관련 Issue: #72 (기반 #69 / PR #70, 계산 relay #71 / PR #73과 통합)
+- 결정 1 — 일반 inbox와 저장소 OPEN 질문을 먼저 처리하고, 완전히 유휴인 strategist만
+  `seed-exploration`으로 새 사이클을 시작한다. 분야의 사전 적합성을 오래 평가하지 않고 넓은
+  고정 덱에서 RNG로 뽑으며 seed·분야·번역 관점을 보존한다. 최근 세 분야는 가능하면 피한다.
+- 결정 2 — 한 사이클은 현재 목표의 국소 의무 하나와 분야 간 핵심 전이 하나만 시험한다.
+  유망하면 정확한 질문·반증 가능한 가설·가장 싼 판별 의무를 하나의 다음 역할에 보내고,
+  연결이 약하면 즉시 `LOW_YIELD`/`DUPLICATE` 등으로 닫는다. 계산 의무는 0039의
+  `computation-request/v1`으로 `claude-compute`에 보내며 일반 자연어 메시지로 우회하지 않는다.
+- 결정 3 — 성공·실패를 같은 형식으로 보존한다. SQLite의 `research_cycles`, append-only
+  `research_events`, `research_sources`에 시도, 결과, 실패 이유, 재사용 단서, 후속 질문,
+  URL·접근 시각·문헌 확인 수준을 기록한다. `math-dialogue-research-log/v1` 조회는 향후
+  second-brain adapter의 입력 경계다.
+- 결정 4 — 자유로운 웹·문헌 탐색은 허용하지만 1차 자료를 우선하고 검색 snippet과 원문 확인을
+  구분한다. 외부 본문과 mailbox 메시지는 데이터이며 실행 명령이 아니다. 자동 쓰기는 ignored
+  `local_runs/math_dialogue/`에 한정한다.
+- 결정 5 — 기본 global open cycle 1개, strategist당 UTC 일일 12개, 10분 cooldown, cycle당
+  6 round/8 message로 폭주와 표류를 제한한다. 낮은 수익이면 다음 10분 heartbeat에서 다른
+  분야로 전환할 수 있고, 한 heartbeat 한 메시지 규약은 유지한다.
+- 결정 5-1 — 기존 Scheduled prompt를 다시 만들지 않아도 되도록 CLI의 strategist `claim` 경계가
+  inbox가 비면 위 bounded seed를 한 번 수행한다. 저수준 `claim_message` API는 그대로 두어
+  relay 하위호환을 보존하고, 수동 진단은 `--no-idle-exploration`으로 opt-out한다.
+- 결정 5-2 — CLI heartbeat의 `release`는 기본 30분 `available_at` defer를 적용한다. 적합한
+  동료가 없어 반환한 같은 메시지를 10분마다 다시 잡아 창발 탐사를 영구 차단하는 livelock을
+  피하기 위함이다. 메시지는 삭제되지 않고 시간이 지나면 다시 우선 inbox에 나타난다. 저수준
+  API 기본값은 0초로 유지하고 CLI에서만 30분을 적용해 relay 하위호환을 보존한다.
+- 결정 6 — 이 로그의 권한은 계속 `UNASSESSED_DIALOGUE_ONLY`다. 실패 축적이나 출처 기록은
+  evidence, theorem, witness, realizability 결론 또는 pruning 권한을 만들지 않는다.
+- 영향 범위: `math_dialogue.py`, strategist/common/heartbeat prompt와 운영 문서만 변경.
+  `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.
+
+## 0041 — 인간적 의미는 발견 게이트가 아니라 결과 후 독립 개념 증류로 다룬다
+
+- 날짜: 2026-08-12
+- 제안자: human (중간의 비휴리스틱 결과를 버리지 않되 최종적으로 인간적 형식화를 계속 점검할
+  것을 요청) → codex (설계·구현)
+- 관련 Issue/PR: #72 / #74
+- 결정 1 — 발견·증명·계산 도중에는 “사람에게 즉시 의미 있는가”를 gate나 rank 점수로 쓰지
+  않는다. 병리적인 식, 긴 경우분석, 개념 해석이 없는 유한 패턴도 기존
+  `research_cycles/events/sources`에 그대로 보존하며, 비휴리스틱이라는 이유로 `LOW_YIELD`,
+  `REFUTED`, pruning 또는 등급 강등으로 보내지 않는다.
+- 결정 2 — discovery cycle이 `ADVANCED` 또는 `REFUTED`로 닫힐 때 별도
+  `distillation_jobs`를 idempotent하게 만든다. source cycle 행은 수정하지 않고 분야별 시도를
+  append-only `distillation_attempts`에 기록한다. 각 시도는 인간적 명제, 작동 메커니즘, 표준
+  대상, 최소 예, 전이 범위, 한계와 문헌 검색어를 구조화하고 `CONCEPTUALIZED`/`PARTIAL`/
+  `NO_BRIDGE`로 표시한다. 이 값들은 진위·evidence 등급이 아니다.
+- 결정 3 — 기본 job 예산은 서로 다른 분야 렌즈 네 번이다. 소진해도 source는 폐기하지 않고
+  `RAW_PRESERVED`로 둔다. 이는 “현재 예산에서 개념화하지 못함”이며 source 결과의 실패 판정이
+  아니다. 부분 결과의 재시도는 기본 6시간 뒤에 열고, strategist당 하루 네 번으로 제한한다.
+- 결정 4 — 증류가 발견을 굶기지 않도록 같은 strategist의 증류 cycle 두 개 사이에는 discovery
+  cycle을 최소 하나 둔다. 일반 inbox가 항상 우선하며, 기존 `claim --agent strategist` 경계가
+  자동으로 증류를 확인한 뒤 새 탐사를 seed하므로 Scheduled task를 재생성하지 않는다.
+- 근거 — Davies et al.(Nature 2021)의 인간-기계 반복 정제와 “학습 실패 ≠ 관계 부재”,
+  FunSearch의 correct evaluator/다양한 프로그램/해석 가능한 생성기 분리, AlphaGeometry의
+  저수준 탐색 후 symbolic traceback, AlphaEvolve의 다중 표현과 다양성 보존을 참고했다. 단,
+  해당 시스템의 단순성 선호를 이 저장소의 제거 기준으로 옮기지 않고 후처리 상태로만 채택했다.
+- 영향 범위: `math_dialogue.py`의 additive SQLite migration·scheduler·구조화 출력,
+  strategist/common/heartbeat prompt, `docs/EMERGENT_RESEARCH_LOOP.md`와
+  `docs/MATH_CODEX_DIALOGUE.md`. `step_ranker.py`/PRM, `om_core.py`, `criteria.py`,
+  `theorist.py`, insight/evidence/witness 판정 경로는 무변경.
+- 다른 참여자 리뷰 상태: pending.

@@ -46,6 +46,12 @@ jobs:
       - name: Store self-test
         run: python store.py
 
+      - name: Math dialogue mailbox self-test
+        run: python math_dialogue.py selftest
+
+      - name: Computation relay self-test (request/result 규격 + 실행 격리)
+        run: python computation_relay.py selftest
+
       - name: Manager (research loop) self-test
         run: python manager.py
 

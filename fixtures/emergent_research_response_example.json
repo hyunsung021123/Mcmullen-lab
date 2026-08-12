@@ -1,0 +1,33 @@
+{
+  "to": "falsifier",
+  "kind": "CONJECTURE",
+  "grade": "UNASSESSED",
+  "body": "CLAIM: 선택 분야 관점에서 얻은 반증 가능한 가설.\nASSUMPTIONS: 정확한 범위.\nWORK: 한 단계 번역.\nSTATUS: UNASSESSED.\nNEXT_TEST: 최소 반례 탐색.\nROUTE: falsifier가 경계 사례를 공격한다.",
+  "evidence_refs": [
+    "docs/RESEARCH_STATUS.md",
+    "https://example.org/primary-source"
+  ],
+  "research_log": {
+    "event_type": "HYPOTHESIS",
+    "summary": "선택 분야의 불변량으로부터 시험 가능한 가설을 만들었다.",
+    "approach": "현재 목표의 국소 의무를 선택 분야의 표준 obstruction으로 번역했다.",
+    "outcome": "ADVANCED",
+    "failure_reason": "",
+    "reusable_clues": [
+      "번역에 필요한 가정은 원소 재명명 불변성이다."
+    ],
+    "next_questions": [
+      "최소 매개변수에서 이 obstruction이 실제로 존재하는가?"
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://example.org/primary-source",
+      "title": "Primary source title",
+      "verification_level": "FULLTEXT",
+      "note": "정의와 가정만 확인했다. 결과를 이 문제에 적용한 부분은 에이전트의 추론이다."
+    }
+  ],
+  "ttl_seconds": 86400,
+  "close_topic": false
+}
