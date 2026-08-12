@@ -859,3 +859,85 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   `certificate_export.py`의 플랫폼 개행 정합, 패키징/CI. `om_core.py`, `criteria.py`,
   `theorist.py`의 결정론적 적대자 로직은 무변경.
 - 다른 참여자 리뷰 상태: pending.
+
+## 0037 — 로컬 수학 Codex task 토론은 권한 없는 우편함으로 분리
+
+- 날짜: 2026-08-12
+- 제안자: human (여러 수학 Codex 세션의 자동 토론 환경 요청) → codex (구현)
+- 관련 Issue: #69
+- 결정 1 — 같은 checkout을 보는 여러 heartbeat의 간접 통신에 `math_dialogue.py` SQLite
+  우편함을 쓴다. `BEGIN IMMEDIATE` 선점, lease 만료, TTL, 최대 라운드와 최대 메시지 수로
+  동시 처리와 무한 자기대화를 제한한다.
+- 결정 2 — 우편함은 런타임 운반 계층이며 `.math_dialogue/`는 Git에서 제외한다. 장기 공유
+  기억은 계속 Git·Issue·`insight_ledger.py`·evidence DB가 담당한다.
+- 결정 3 — 모든 토론 산출물의 권한은 `UNASSESSED_DIALOGUE_ONLY`다. 메시지에 적힌 grade는
+  작성자의 자체 분류이며 evidence가 아니다. ledger 상태 전이, witness 판정, pruning,
+  실현가능성 결론으로 자동 승격하는 경로를 만들지 않는다.
+- 결정 4 — heartbeat 한 번은 메시지 하나만 `claim → 응답 파일 → submit`하고 끝낸다.
+  상대 task 직접 호출이나 같은 실행에서 연속 claim하는 구조는 금지한다. 실제 task 생성과
+  heartbeat 활성화는 모의 selftest와 수동 왕복을 통과한 뒤 별도로 수행한다.
+- 영향 범위: 신규 `math_dialogue.py`, 설정 문서와 역할 프롬프트, 패키징·CI·gitignore.
+  `om_core.py`, `criteria.py`, `theorist.py`, insight/evidence 판정 경로는 무변경.
+
+## 0038 — 수학 task는 범용 역할과 기존-thread heartbeat로 자율 운영
+
+- 날짜: 2026-08-12
+- 제안자: human (최초 역할 지정 뒤 무개입 자율 토론 요청) → codex (설계·구현)
+- 관련 Issue/PR: #69 / #70
+- 결정 1 — 매 실행마다 새 task를 만드는 standalone schedule이 아니라, 각 기존 수학 task의
+  문맥을 유지하는 10분 heartbeat를 쓴다. heartbeat는 같은 local checkout에서 메시지 한 건만
+  처리한다.
+- 결정 2 — 권장 역할은 `strategist`(정식화·분해·종합), `prover`(증명 구성),
+  `falsifier`(반증·감사), `experimentalist`(결정론적 계산)다. task가 2개뿐이면 이를
+  `builder`와 `critic`으로 합치되 구성과 공격 관점은 분리한다.
+- 결정 3 — intake 역할은 active agent가 2명 이상일 때 `questions/OPEN.md`의 새 `OPEN`
+  질문을 source key로 중복 없이 한 번에 하나씩 투입한다. 동시에 열린 저장소 topic은 기본
+  2개로 제한한다. heartbeat `last_seen`이 기본 30분 넘게 갱신되지 않은 agent는 새 작업을
+  받을 active roster에서 제외한다.
+- 결정 4 — 실제 운영 경로는 이미 Git에서 제외되는
+  `local_runs/math_dialogue/dialogue.sqlite3`로 둔다. 이는 0037의 초기 `.math_dialogue/`
+  경로를 대체한다.
+- 결정 5 — 자동 task는 tracked 파일을 수정하지 않는다. 초안과 계산 산출물은 `local_runs`
+  아래에 두고, 사람이 검토한 뒤 기존 insight/evidence 절차로만 승격한다.
+- 영향 범위: `math_dialogue.py`의 idempotent enqueue·OPEN 질문 sync·lease release, 범용 역할
+  프롬프트와 운영 문서. 수학 판정·검사기 경로는 무변경.
+
+## 0039 — 계산 의무는 request/result 규격으로 전달하고, 실행 권한은 검토된 plan 에만 준다
+
+- 날짜: 2026-08-12
+- 제안자: human (Codex 수학 세션 → Claude 계산 실험 비동기 전달 요청) → claude-code (설계·구현)
+- 관련 Issue/PR: #70 의 후속 (`claude/71-computation-relay`, PR #70 병합 의존)
+- 결정 1 — provider-neutral 한 `computation-request/v1` 과 `computation-result/v1` 을 정의한다.
+  요청은 claim·quantifiers·assumptions·scope·realizability·invariance·결정론적 oracle·
+  controls·전수 기대치·중단 규칙·자원 예산·source_refs·return_to 를 갖는다. 결과는
+  outcome·trust class·소진 범위·확인/기대 개수·명령·seed·Python/solver 버전·commit 또는
+  snapshot_id·artifact SHA-256·최초 실패와 반례를 갖는다.
+- 결정 2 — **request 는 데이터다.** 스키마에 명령을 담을 필드가 없고, `commands`/`argv`/
+  `script`/`shell`/`code` 류의 키가 하위 어디에 나타나도 재귀 스캔이 거부한다. 실행 대상은
+  계산 담당 agent 가 작성하고 `reviewed: true` 로 승인한 `experiment-plan/v1` 의 commands
+  뿐이며, `run` 은 request 파일을 열지 않는다. `argv[0]` 은 Python 인터프리터로 제한하고
+  승격 계층(`insight_ledger`·`evidence_db`·`--promote`)을 건드리는 명령은 정적으로 막는다.
+- 결정 3 — `trust_class` 는 호출자가 지정할 수 없고 outcome·전수 개수 일치·대조군·명령
+  종료코드·tracked guard 에서 도출한다(0023 의 `derive_trust_status` 와 같은 규율).
+  `PROVEN`/`VERIFIED`/`CERTIFIED` 계열은 이 계층이 만들 수 없다. 전수 개수가 어긋나면
+  등급을 낮추는 것이 아니라 **결과 자체를 거부**한다 — 조용히 강등하면 "전수했다"는 문장이
+  산출물에 그대로 남기 때문이다. 반례 없는 `REFUTED` 도 거부한다.
+- 결정 4 — 자동 실행은 tracked 파일을 수정하지 않는다. 실행 전후 `git status --porcelain`
+  의 tracked 변경 집합을 비교해 달라지면 그 run 을 봉인하고 등급을 `UNRESOLVED` 로 떨어뜨린다.
+  산출물은 gitignore 된 `local_runs/math_dialogue/computation_requests/` 와
+  `computation_runs/` 아래에만 원자적으로(`os.replace`) 쓴다. `experiments/` 나 evidence 로의
+  승격은 사람 검토 후 별도 PR 로만 한다 (0038 결정 5 의 연장).
+- 결정 5 — 큐는 우편함과 같은 SQLite 파일의 `computation_requests` 테이블로 둔다. 원자적
+  선점·lease/TTL·만료 복구를 새로 만들지 않고 `math_dialogue` 와 같은 검증된 방식을 쓴다.
+  중복은 `request_id` 와 **내용 해시**(제목·시각 제외) 두 축으로 막아, 새 id 를 붙인 같은
+  계산 의무도 거부한다.
+- 결정 6 — 우편함 메시지 종류에 `COMPUTATION_REQUEST`·`EXPERIMENT_PLAN`·`COMPUTATION_RESULT`
+  를 추가한다. `KINDS = DIALOGUE_KINDS | COMPUTATION_KINDS` 로 기존 8종을 그대로 두는 상위집합
+  이며, `kind` 컬럼에 CHECK 제약이 없어 과거 행도 그대로 읽힌다.
+- 결정 7 — 모든 CLI 출력과 하위 프로세스를 UTF-8 로 강제하고, 출력 실패가 종료 코드를
+  바꾸지 않게 한다. Windows cp949 에서 출력이 죽으면 호출자가 재시도해 같은 request 를 두 번
+  claim 하는 사고가 나기 때문이다. 그럼에도 재시도가 안전하도록 claim/post/submit 을 전부
+  idempotent 로 만든다.
+- 영향 범위: 신규 `computation_relay.py`·`scripts/relay_demo_enumerate.py`·
+  `docs/COMPUTATION_RELAY.md`·fixtures 3종, `math_dialogue.py` 의 KINDS 확장(추가만),
+  CI/pyproject/CLAUDE.md 등록. `om_core.py` 를 비롯한 기존 결정론적 판정 권한은 무변경.

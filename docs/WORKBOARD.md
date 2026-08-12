@@ -14,6 +14,12 @@
 | Issue | 작업 | 담당 | 브랜치 | 상태 | 마지막 갱신 |
 |---|---|---|---|---|---|
 | #16 | GP 관계 테이블 컴파일 캐싱 | codex | codex/16-cache-compile-relations | review | 2026-07-12 |
+| #69 | 수학 task 자율 토론 우편함 | codex | codex/69-math-dialogue-mailbox (PR #70) | review | 2026-08-12 |
+| — | 계산 의무 전달 계층 (request/result v1) | claude | claude/71-computation-relay | review | 2026-08-12 |
+
+> ⚠ `claude/71-computation-relay` 는 **PR #70 위에 쌓은 후속 브랜치**입니다. `math_dialogue.py`
+> 를 확장하므로 PR #70 이 먼저 병합돼야 하고, PR #70 의 브랜치는 codex 소유이므로 직접
+> 수정하지 않았습니다. HANDOFF 는 해당 PR 본문에 있습니다.
 
 <!-- 예시 행(실제 작업이 생기면 이 형식으로 추가):
 | #12 | 재배향 프로파일링 | codex | codex/12-profile-reorientation | active | 2026-07-12 |

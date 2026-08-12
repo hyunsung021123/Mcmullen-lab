@@ -1,0 +1,80 @@
+{
+  "assumptions": [
+    "uniform chirotope 로 한정한다 (어떤 기저에도 부호 0 이 없다)",
+    "witness 판정은 om_core.mcmullen_evaluate 의 재배향 궤도 전수에 의존한다"
+  ],
+  "claim": {
+    "formal": "forall s in {+1,-1}^C(5,3): let chi = Chirotope(5,3,s) in chi.is_valid() -> not mcmullen_evaluate(chi).witness",
+    "statement": "rank r=3 (d=2), n=5 의 모든 부호배정 2^C(5,3) 개 중 om_core 가 witness 로 판정하는 것은 하나도 없다. ν(2) = 2d+1 = 5 가 tight 하다는 것의 계산적 대응이다."
+  },
+  "controls": [
+    {
+      "expect": "valid=True, witness=False",
+      "name": "모멘트 곡선 양성 대조"
+    },
+    {
+      "expect": "valid=False",
+      "name": "GP 위반 음성 대조"
+    }
+  ],
+  "created_at": "2026-08-12T11:00:00+00:00",
+  "created_by": "codex-prover",
+  "exhaustive_expectation": {
+    "count_formula": "2^C(5,3) = 2^10 = 1024",
+    "expected_count": 1024,
+    "mode": "exhaustive",
+    "tolerance": 0
+  },
+  "invariance": "ORBIT_INVARIANT",
+  "oracle": {
+    "authority": "om_core",
+    "deterministic": true,
+    "entrypoint": "mcmullen_evaluate",
+    "module": "om_core"
+  },
+  "quantifiers": [
+    {
+      "domain": "{+1,-1}^C(5,3) — 정렬된 3-부분집합에 대한 모든 부호배정",
+      "kind": "forall",
+      "var": "s"
+    }
+  ],
+  "realizability": "ABSTRACT_ALLOWED",
+  "request_id": "CR-20260812-d2n5-witnessfree",
+  "resource_budget": {
+    "memory_mb": 2048,
+    "processes": 1,
+    "solvers": [],
+    "wall_seconds": 600
+  },
+  "return_to": {
+    "agent": "codex-prover",
+    "mailbox": "math_dialogue",
+    "message_id": null,
+    "topic_id": null
+  },
+  "schema": "computation-request/v1",
+  "scope": {
+    "d": 2,
+    "enumeration": "exhaustive",
+    "family": "all_sign_assignments",
+    "n": 5,
+    "r": 3
+  },
+  "source_refs": {
+    "docs": [
+      "knowledge/problem.md",
+      "README.md#10"
+    ],
+    "evidence_ids": [],
+    "insight_ids": [],
+    "questions": [],
+    "research_ir_steps": []
+  },
+  "stopping_rule": {
+    "max_evaluations": null,
+    "max_wall_seconds": 600,
+    "on": "exhaust"
+  },
+  "title": "d=2, n=5 전수에서 witness 부재 확인"
+}
