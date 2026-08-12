@@ -1,0 +1,112 @@
+﻿{
+  "artifacts": [
+    {
+      "bytes": 550,
+      "path": "artifacts/enumeration.json",
+      "sha256": "5c91f8efc7c58785c249bfed540ebccdb577730c3ee2f6837ba91a52b1198932"
+    },
+    {
+      "bytes": 0,
+      "path": "command-00.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 475,
+      "path": "command-00.stdout.log",
+      "sha256": "e7fff55ec537ce132d4168a71a8796b09cfef291db952fcd0a06f92b0c0aff0c"
+    },
+    {
+      "bytes": 842,
+      "path": "plan.json",
+      "sha256": "2b3ec39fc633f34e611900e2c3d252daf951fcf4962efdb05546ebdbc052e78c"
+    }
+  ],
+  "authority": "UNASSESSED_COMPUTATION_ONLY",
+  "checked_count": 1024,
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "scripts/relay_demo_enumerate.py"
+      ],
+      "exit_code": 0,
+      "expect_exit_code": 0,
+      "index": 0,
+      "stderr_log": "command-00.stderr.log",
+      "stdout_log": "command-00.stdout.log",
+      "timed_out": false,
+      "wall_seconds": 0.076
+    }
+  ],
+  "control_results": [
+    {
+      "name": "모멘트 곡선 양성 대조",
+      "observed": "valid=True, witness=False",
+      "passed": true
+    },
+    {
+      "name": "GP 위반 음성 대조",
+      "observed": "valid=False",
+      "passed": true
+    }
+  ],
+  "count_tolerance": 0,
+  "counterexample": null,
+  "counts_match": true,
+  "environment": {
+    "executable": "<python>",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6",
+    "python_implementation": "CPython",
+    "solvers": {
+      "z3": "4.16.0"
+    }
+  },
+  "exhausted_scope": {
+    "d": 2,
+    "enumeration": "exhaustive",
+    "n": 5,
+    "r": 3,
+    "space": "{+1,-1}^C(5,3)"
+  },
+  "expected_count": 1024,
+  "first_failure": null,
+  "notes": "1024 개 전수 중 GP 공리를 통과한 chirotope 384 개, 그중 witness 0 개. d=2 는 ν(2)=2d+1=5 로 tight 하므로 n=5 에서 witness 가 없어야 한다는 예측과 일치한다. 등급은 EXHAUSTED_ON_SCOPE 이며 이것은 정리가 아니라 이 유한 범위의 전수 확인이다.",
+  "outcome": "EXHAUSTED_ON_SCOPE",
+  "plan_id": "PLAN-20260812-d2n5-001",
+  "produced_at": "2026-08-12T01:42:50+00:00",
+  "produced_by": "claude-compute",
+  "promotion": "사람 검토 후 별도 PR 로만 experiments/ 또는 evidence 로 승격한다",
+  "request_id": "CR-20260812-d2n5-witnessfree",
+  "run_id": "RUN-20260812-014227-aecf8d",
+  "schema": "computation-result/v1",
+  "seed": 20260812,
+  "source": {
+    "commit": "cfffb7d110b6ce4d60d30fab5cd1dbcaaee18039",
+    "dirty": true,
+    "snapshot_id": null
+  },
+  "source_refs": {
+    "docs": [
+      "knowledge/problem.md",
+      "README.md#10"
+    ],
+    "evidence_ids": [],
+    "insight_ids": [],
+    "questions": [],
+    "research_ir_steps": []
+  },
+  "tracked_file_guard": {
+    "status": "clean"
+  },
+  "trust_class": "EXHAUSTED_ON_SCOPE",
+  "trust_class_derived_from": {
+    "commands_ok": true,
+    "controls_ok": true,
+    "counts_match": true,
+    "has_counterexample": false,
+    "missing_controls": [],
+    "mode": "exhaustive",
+    "tracked_guard_ok": true
+  }
+}

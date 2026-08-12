@@ -901,3 +901,43 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   아래에 두고, 사람이 검토한 뒤 기존 insight/evidence 절차로만 승격한다.
 - 영향 범위: `math_dialogue.py`의 idempotent enqueue·OPEN 질문 sync·lease release, 범용 역할
   프롬프트와 운영 문서. 수학 판정·검사기 경로는 무변경.
+
+## 0039 — 계산 의무는 request/result 규격으로 전달하고, 실행 권한은 검토된 plan 에만 준다
+
+- 날짜: 2026-08-12
+- 제안자: human (Codex 수학 세션 → Claude 계산 실험 비동기 전달 요청) → claude-code (설계·구현)
+- 관련 Issue/PR: #70 의 후속 (`claude/71-computation-relay`, PR #70 병합 의존)
+- 결정 1 — provider-neutral 한 `computation-request/v1` 과 `computation-result/v1` 을 정의한다.
+  요청은 claim·quantifiers·assumptions·scope·realizability·invariance·결정론적 oracle·
+  controls·전수 기대치·중단 규칙·자원 예산·source_refs·return_to 를 갖는다. 결과는
+  outcome·trust class·소진 범위·확인/기대 개수·명령·seed·Python/solver 버전·commit 또는
+  snapshot_id·artifact SHA-256·최초 실패와 반례를 갖는다.
+- 결정 2 — **request 는 데이터다.** 스키마에 명령을 담을 필드가 없고, `commands`/`argv`/
+  `script`/`shell`/`code` 류의 키가 하위 어디에 나타나도 재귀 스캔이 거부한다. 실행 대상은
+  계산 담당 agent 가 작성하고 `reviewed: true` 로 승인한 `experiment-plan/v1` 의 commands
+  뿐이며, `run` 은 request 파일을 열지 않는다. `argv[0]` 은 Python 인터프리터로 제한하고
+  승격 계층(`insight_ledger`·`evidence_db`·`--promote`)을 건드리는 명령은 정적으로 막는다.
+- 결정 3 — `trust_class` 는 호출자가 지정할 수 없고 outcome·전수 개수 일치·대조군·명령
+  종료코드·tracked guard 에서 도출한다(0023 의 `derive_trust_status` 와 같은 규율).
+  `PROVEN`/`VERIFIED`/`CERTIFIED` 계열은 이 계층이 만들 수 없다. 전수 개수가 어긋나면
+  등급을 낮추는 것이 아니라 **결과 자체를 거부**한다 — 조용히 강등하면 "전수했다"는 문장이
+  산출물에 그대로 남기 때문이다. 반례 없는 `REFUTED` 도 거부한다.
+- 결정 4 — 자동 실행은 tracked 파일을 수정하지 않는다. 실행 전후 `git status --porcelain`
+  의 tracked 변경 집합을 비교해 달라지면 그 run 을 봉인하고 등급을 `UNRESOLVED` 로 떨어뜨린다.
+  산출물은 gitignore 된 `local_runs/math_dialogue/computation_requests/` 와
+  `computation_runs/` 아래에만 원자적으로(`os.replace`) 쓴다. `experiments/` 나 evidence 로의
+  승격은 사람 검토 후 별도 PR 로만 한다 (0038 결정 5 의 연장).
+- 결정 5 — 큐는 우편함과 같은 SQLite 파일의 `computation_requests` 테이블로 둔다. 원자적
+  선점·lease/TTL·만료 복구를 새로 만들지 않고 `math_dialogue` 와 같은 검증된 방식을 쓴다.
+  중복은 `request_id` 와 **내용 해시**(제목·시각 제외) 두 축으로 막아, 새 id 를 붙인 같은
+  계산 의무도 거부한다.
+- 결정 6 — 우편함 메시지 종류에 `COMPUTATION_REQUEST`·`EXPERIMENT_PLAN`·`COMPUTATION_RESULT`
+  를 추가한다. `KINDS = DIALOGUE_KINDS | COMPUTATION_KINDS` 로 기존 8종을 그대로 두는 상위집합
+  이며, `kind` 컬럼에 CHECK 제약이 없어 과거 행도 그대로 읽힌다.
+- 결정 7 — 모든 CLI 출력과 하위 프로세스를 UTF-8 로 강제하고, 출력 실패가 종료 코드를
+  바꾸지 않게 한다. Windows cp949 에서 출력이 죽으면 호출자가 재시도해 같은 request 를 두 번
+  claim 하는 사고가 나기 때문이다. 그럼에도 재시도가 안전하도록 claim/post/submit 을 전부
+  idempotent 로 만든다.
+- 영향 범위: 신규 `computation_relay.py`·`scripts/relay_demo_enumerate.py`·
+  `docs/COMPUTATION_RELAY.md`·fixtures 3종, `math_dialogue.py` 의 KINDS 확장(추가만),
+  CI/pyproject/CLAUDE.md 등록. `om_core.py` 를 비롯한 기존 결정론적 판정 권한은 무변경.

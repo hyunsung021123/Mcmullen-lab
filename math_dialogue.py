@@ -44,7 +44,9 @@ DEFAULT_DB = Path(os.environ.get(
     Path(__file__).resolve().parent / "local_runs" / "math_dialogue" / "dialogue.sqlite3",
 ))
 
-KINDS = {
+#: 토론 자체의 메시지 종류. 기존 값은 절대 제거하지 않는다 — DB 의 kind 컬럼에는 CHECK
+#: 제약이 없어 과거 행이 그대로 남아 있고, 이 집합을 좁히면 옛 대화가 읽히지 않는다.
+DIALOGUE_KINDS = {
     "QUESTION",
     "DIRECTION",
     "CONJECTURE",
@@ -54,6 +56,17 @@ KINDS = {
     "CRITIQUE",
     "SYNTHESIS",
 }
+
+#: 계산 전달 계층(`computation_relay.py`)이 쓰는 종류. 토론 메시지와 달리 본문이
+#: 산출물 파일을 **참조**하며, 어느 것도 실행 대상이 아니다 — 실행되는 것은
+#: 검토된 experiment-plan/v1 의 commands 뿐이다.
+COMPUTATION_KINDS = {
+    "COMPUTATION_REQUEST",     # 수학 세션 → 계산 세션: 기계가독 계산 의무
+    "EXPERIMENT_PLAN",         # 계산 세션이 작성·검토한 실행 계획 (유일한 실행 대상)
+    "COMPUTATION_RESULT",      # 계산 세션 → 원래 agent: 재현 가능한 결과 회신
+}
+
+KINDS = DIALOGUE_KINDS | COMPUTATION_KINDS
 GRADES = {
     "UNASSESSED",
     "SPECULATION",
