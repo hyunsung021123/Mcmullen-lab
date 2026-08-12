@@ -53,6 +53,11 @@ source는 모두 `UNASSESSED_DIALOGUE_ONLY`이며 `evidence_db.py`, insight ledg
 - 한 사이클은 핵심 전이 하나만 밀며, 병렬 질문 폭발 대신 가장 값싼 판별 의무 하나를 라우팅한다.
 - `LOW_YIELD`와 `DUPLICATE`를 실패가 아닌 보존할 연구 데이터로 취급한다.
 
+계산 의무는 일반 메시지만 보내지 않고 `docs/COMPUTATION_RELAY.md`의
+`computation-request/v1`으로 `claude-compute`에 게시한다. 요청은 데이터이고 실행 명령은 담지
+않는다. Claude가 검토한 `experiment-plan/v1`만 실행 대상이며, 결과가 돌아와도 이 탐사 로그의
+권한은 그대로 `UNASSESSED_DIALOGUE_ONLY`다.
+
 ## 웹·문헌과 로컬 쓰기 권한
 
 에이전트는 사용 가능한 브라우징 도구로 웹과 문헌을 읽을 수 있다. 논문·공식 문서 같은 1차

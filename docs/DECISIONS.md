@@ -952,7 +952,8 @@ Claude Code · Codex · ChatGPT가 이 저장소에서 협업하며 내린 아�
   고정 덱에서 RNG로 뽑으며 seed·분야·번역 관점을 보존한다. 최근 세 분야는 가능하면 피한다.
 - 결정 2 — 한 사이클은 현재 목표의 국소 의무 하나와 분야 간 핵심 전이 하나만 시험한다.
   유망하면 정확한 질문·반증 가능한 가설·가장 싼 판별 의무를 하나의 다음 역할에 보내고,
-  연결이 약하면 즉시 `LOW_YIELD`/`DUPLICATE` 등으로 닫는다.
+  연결이 약하면 즉시 `LOW_YIELD`/`DUPLICATE` 등으로 닫는다. 계산 의무는 0039의
+  `computation-request/v1`으로 `claude-compute`에 보내며 일반 자연어 메시지로 우회하지 않는다.
 - 결정 3 — 성공·실패를 같은 형식으로 보존한다. SQLite의 `research_cycles`, append-only
   `research_events`, `research_sources`에 시도, 결과, 실패 이유, 재사용 단서, 후속 질문,
   URL·접근 시각·문헌 확인 수준을 기록한다. `math-dialogue-research-log/v1` 조회는 향후

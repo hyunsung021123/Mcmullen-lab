@@ -162,6 +162,11 @@ python -X utf8 math_dialogue.py seed-exploration --agent strategist `
 python math_dialogue.py release --agent strategist --message-id 17
 ```
 
+계산이 필요하면 `claude-compute`에 일반 메시지만 보내지 않고
+`docs/COMPUTATION_RELAY.md`의 `computation-request/v1`을 작성해 `computation_relay.py
+post-request`로 게시한다. relay가 아직 활성화되지 않은 환경에서만 `experimentalist`를
+fallback으로 쓴다.
+
 ## 7. 상태 확인과 중지
 
 ```powershell

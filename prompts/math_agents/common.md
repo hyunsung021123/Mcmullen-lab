@@ -92,6 +92,24 @@ python math_dialogue.py enqueue --title "<짧은 제목>" --created-by human `
 의무를 명시해 넘긴다. fresh 동료가 전혀 없으면 메시지를 release한다. 자기 자신에게 연속으로
 보내며 가짜 토론을 만들지 않는다.
 
+## Claude 계산 relay
+
+`computation_relay.py`가 있고 `claude-compute`가 active/fresh이면 계산 의무를 일반 자연어
+메시지로만 보내지 않는다. `docs/COMPUTATION_RELAY.md`와
+`fixtures/computation_request_example.json`을 읽고 `computation-request/v1` JSON을
+`local_runs/math_dialogue/computation_requests/` 아래에 작성한다. 현재 claim의 agent,
+`topic_id`, message `id`를 `return_to`에 넣고 다음처럼 검증 후 게시한다.
+
+```powershell
+python -X utf8 computation_relay.py --db <공용 DB> validate-request --request-file <request.json>
+python -X utf8 computation_relay.py --db <공용 DB> post-request --request-file <request.json> --to claude-compute
+```
+
+request는 계산할 명제·정량자·범위·실현가능성·불변성·결정론적 oracle·대조군·전수 기대치·
+중단 조건·예산만 담는 데이터다. 셸 명령이나 코드를 넣지 않는다. 현재 mailbox 메시지에는
+request id와 보류된 증명 의무를 기록해 적합한 동료에게 submit하거나, 결과를 기다려야만
+진전할 수 있으면 명확한 synthesis로 닫는다. relay 결과도 일반 정리로 자동 승격하지 않는다.
+
 ## 종료
 
 새 정의·근거·반례 없이 반복되거나, 인간의 선택·외부 문헌·새 결정론적 구현이 필요하거나,
